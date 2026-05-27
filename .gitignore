@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+.installed.cfg
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+.tox/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Project-local data
+data/
+*.kuzu
+*.kuzu.wal
+storage/
+logs/
+*.log
+
+# Env files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Docker volumes (if mapped locally)
+.docker-data/

@@ -1,0 +1,125 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kuvox-ai"
+version = "0.1.0"
+description = "Kuvox AI service — graph-augmented retrieval for intelligent video editing"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Kuvox" }]
+
+dependencies = [
+    # Web framework
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+
+    # Logging
+    "structlog>=24.4",
+
+    # Infrastructure clients
+    "kuzu>=0.7",
+    "qdrant-client>=1.12",
+    "redis>=5.2",
+    "aio-pika>=9.5",
+    "boto3>=1.35",
+    "botocore>=1.35",
+
+    # Utilities
+    "httpx>=0.27",
+    "anyio>=4.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "types-boto3>=1.0",
+]
+
+[project.scripts]
+kuvox-ai = "kuvox_ai.main:run"
+kuvox-ingestion-worker = "kuvox_ai.workers.ingestion_worker:run"
+kuvox-rendering-worker = "kuvox_ai.workers.rendering_worker:run"
+kuvox-sandbox-worker = "kuvox_ai.workers.sandbox_worker:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kuvox_ai"]
+
+# ----- Ruff -----------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Strict-ish: pyflakes, pycodestyle, isort, bugbear, pyupgrade, simplify, comprehensions, naming.
+select = [
+    "E", "F", "W",       # pycodestyle / pyflakes
+    "I",                  # isort
+    "B",                  # bugbear
+    "UP",                 # pyupgrade
+    "SIM",                # simplify
+    "C4",                 # comprehensions
+    "N",                  # pep8-naming
+    "RUF",                # ruff-specific
+    "ASYNC",              # async best practices
+]
+ignore = [
+    "E501",  # line length handled by formatter
+    "B008",  # FastAPI `Depends(...)` in defaults is the idiomatic pattern
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "N802"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ----- Mypy -----------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]
+strict = true
+warn_unused_configs = true
+warn_return_any = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false  # FastAPI/pytest decorators are untyped
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Third-party libs without first-class stubs.
+module = ["kuzu", "qdrant_client.*", "aio_pika.*", "boto3", "botocore.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+# ----- Pytest ---------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    "integration: tests that require docker-compose services running",
+]
