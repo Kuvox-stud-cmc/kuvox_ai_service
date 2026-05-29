@@ -1,0 +1,161 @@
+# =============================================================================
+# Kuvox AI Service — Python dependencies
+# Python: 3.11 (recommended; 3.12 also works)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Web framework and ASGI
+# -----------------------------------------------------------------------------
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+pydantic==2.9.*
+pydantic-settings==2.6.*
+python-multipart==0.0.12        # file uploads
+httpx==0.27.*                    # async HTTP client
+
+# -----------------------------------------------------------------------------
+# gRPC (sync with ASP.NET service)
+# -----------------------------------------------------------------------------
+grpcio>=1.66,<1.68
+grpcio-tools>=1.66,<1.68
+protobuf==5.28.*
+
+# -----------------------------------------------------------------------------
+# Message queue
+# -----------------------------------------------------------------------------
+aio-pika==9.4.*                  # async RabbitMQ client
+pika==1.3.*                      # sync fallback for workers if needed
+
+# -----------------------------------------------------------------------------
+# Caching and session
+# -----------------------------------------------------------------------------
+redis[hiredis]==5.1.*
+
+# -----------------------------------------------------------------------------
+# Databases
+# -----------------------------------------------------------------------------
+kuzu==0.11.3                   # embedded graph database
+qdrant-client==1.12.*            # vector database client
+asyncpg==0.29.*                  # async PostgreSQL driver (read-only access from Python)
+psycopg[binary]==3.2.*           # sync PostgreSQL fallback
+sqlalchemy==2.0.*                # ORM (optional, for read access)
+
+# -----------------------------------------------------------------------------
+# Object storage
+# -----------------------------------------------------------------------------
+boto3==1.35.*                    # S3-compatible client (works with MinIO too)
+aioboto3==13.2.*                 # async S3
+
+# -----------------------------------------------------------------------------
+# LLM orchestration
+# -----------------------------------------------------------------------------
+langchain==0.3.*
+langchain-core==0.3.*
+langchain-community==0.3.*
+langchain-openai==0.2.*          # swap or add others as needed
+langchain-anthropic==0.2.*
+langgraph==0.2.*
+langgraph-checkpoint==2.0.*      # for persistent agent state
+
+# -----------------------------------------------------------------------------
+# LLM provider SDKs (pin to whichever you actually use)
+# -----------------------------------------------------------------------------
+openai==1.54.*
+anthropic==0.39.*
+tiktoken==0.8.*                  # token counting
+
+# -----------------------------------------------------------------------------
+# Deep learning frameworks
+# -----------------------------------------------------------------------------
+# For CUDA installs, add: --extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.4.*
+torchvision==0.19.*
+torchaudio==2.4.*
+
+# -----------------------------------------------------------------------------
+# Embedding and encoder models
+# -----------------------------------------------------------------------------
+transformers==4.45.*
+sentence-transformers==3.2.*     # text embeddings for transcripts/OCR
+open-clip-torch==2.26.*          # CLIP and SigLIP
+# CLAP for audio embeddings — use one of these:
+msclap==1.3.*                    # Microsoft CLAP, simpler API
+# laion-clap==1.1.6              # alternative; uncomment if preferred
+
+# -----------------------------------------------------------------------------
+# Speech recognition (Whisper)
+# -----------------------------------------------------------------------------
+faster-whisper==1.0.*            # CTranslate2-based, much faster than openai-whisper
+# openai-whisper==20240930       # alternative; uncomment only if you don't use faster-whisper
+
+# -----------------------------------------------------------------------------
+# OCR
+# -----------------------------------------------------------------------------
+easyocr==1.7.*                # alternative; uncomment if PaddleOCR is too heavy
+
+# -----------------------------------------------------------------------------
+# Classical ML
+# -----------------------------------------------------------------------------
+scikit-learn==1.5.*
+xgboost==2.1.*
+lightgbm==4.5.*                  # for learning-to-rank
+numpy==1.26.*                    # NOT 2.x yet — many ML libs aren't ready
+scipy==1.14.*
+pandas==2.2.*
+
+# -----------------------------------------------------------------------------
+# Computer vision and signal processing
+# -----------------------------------------------------------------------------
+opencv-python-headless==4.10.*   # 'headless' = no GUI deps, smaller image
+pillow==10.4.*
+scenedetect[opencv]==0.6.*       # baseline shot boundary detection
+librosa==0.10.*                  # audio feature extraction
+soundfile==0.12.*                # audio I/O
+
+# -----------------------------------------------------------------------------
+# Video processing (the actual rendering engine)
+# -----------------------------------------------------------------------------
+moviepy==2.1.*                 # 2.0 is in alpha; stick with 1.0.3 for stability
+imageio==2.36.*
+imageio-ffmpeg==0.5.*
+ffmpeg-python==0.2.0             # direct FFmpeg bindings as escape hatch
+av==12.3.*                       # PyAV for fast frame extraction
+
+# -----------------------------------------------------------------------------
+# Graph algorithms (run BEFORE writing to Kuzu)
+# -----------------------------------------------------------------------------
+networkx==3.4.*                  # for Louvain, PageRank during ingestion
+python-louvain==0.16             # community detection
+
+# -----------------------------------------------------------------------------
+# Lexical search (BM25)
+# -----------------------------------------------------------------------------
+rank-bm25==0.2.2
+
+# -----------------------------------------------------------------------------
+# Sandboxed code execution
+# -----------------------------------------------------------------------------
+docker==7.1.*                    # Docker SDK for spinning up code-gen containers
+
+# -----------------------------------------------------------------------------
+# Observability
+# -----------------------------------------------------------------------------
+structlog==24.4.*                # structured logging
+opentelemetry-api==1.27.*
+opentelemetry-sdk==1.27.*
+opentelemetry-instrumentation-fastapi==0.48b0
+opentelemetry-instrumentation-grpc==0.48b0
+opentelemetry-instrumentation-redis==0.48b0
+prometheus-client==0.21.*
+langsmith==0.1.*                 # LangChain/LangGraph tracing (optional but useful)
+
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
+python-dotenv==1.0.*
+tenacity==9.0.*                  # retry with exponential backoff
+orjson==3.10.*                   # faster JSON
+ujson==5.10.*                    # alternative fast JSON
+pyyaml==6.0.*
+click==8.1.*                     # CLI for management scripts
+rich==13.9.*                     # nicer logs during dev
