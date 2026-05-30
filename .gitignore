@@ -53,3 +53,5 @@ logs/
 
 # Docker volumes (if mapped locally)
 .docker-data/
+
+.claude
