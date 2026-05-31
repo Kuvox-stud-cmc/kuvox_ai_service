@@ -46,6 +46,15 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
+      - name: Copy compose file to Droplet
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          source: docker-compose.prod.yml
+          target: /opt/kuvox
+
       - name: Deploy to Droplet
         uses: appleboy/ssh-action@v1
         with:
