@@ -8,7 +8,8 @@ services:
     image: ghcr.io/${GITHUB_OWNER}/kuvox-api:${API_TAG:-latest}
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      # Bound to localhost only — the host Nginx reverse proxy fronts it with TLS.
+      - "127.0.0.1:5000:5000"
     env_file: .env
     depends_on:
       postgres:
