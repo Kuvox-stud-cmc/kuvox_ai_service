@@ -58,7 +58,7 @@ class ObjectStorageClient:
         return self._bucket
 
     @property
-    def client(self) -> "S3Client":
+    def client(self) -> S3Client:
         if self._client is None:
             raise RuntimeError("ObjectStorageClient is not connected")
         return self._client

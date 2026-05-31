@@ -9,13 +9,15 @@ from pydantic import BaseModel, Field
 
 IngestionTier = Literal[0, 1, 2]
 
+_DEFAULT_TIERS: list[IngestionTier] = [0, 1, 2]
+
 
 class IngestionRequest(BaseModel):
     """Payload pulled off the ingestion RabbitMQ queue."""
 
     video_id: UUID
     source_storage_key: str
-    tiers: list[IngestionTier] = Field(default_factory=lambda: [0, 1, 2])
+    tiers: list[IngestionTier] = Field(default_factory=lambda: list(_DEFAULT_TIERS))
 
 
 class IngestionResult(BaseModel):

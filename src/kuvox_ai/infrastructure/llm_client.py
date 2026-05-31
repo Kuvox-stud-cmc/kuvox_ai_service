@@ -109,7 +109,7 @@ class StubLLMClient(LLMClient):
         # actually call a model and validate the response against ``schema``.
         try:
             return schema()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             raise NotImplementedError(
                 f"StubLLMClient cannot synthesize an instance of {schema.__name__} "
                 "with required fields lacking defaults. Provide a real LLMClient."

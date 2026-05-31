@@ -65,6 +65,7 @@ select = [
     "E", "F", "W",       # pycodestyle / pyflakes
     "I",                  # isort
     "B",                  # bugbear
+    "BLE",                # blind-except
     "UP",                 # pyupgrade
     "SIM",                # simplify
     "C4",                 # comprehensions

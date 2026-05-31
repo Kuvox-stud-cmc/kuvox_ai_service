@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import signal
 from collections.abc import Awaitable, Callable
 
@@ -30,10 +31,8 @@ async def run_worker(queue_name: str, handler: MessageHandler, *, worker_name: s
     loop = asyncio.get_running_loop()
     # Signal handlers aren't supported on Windows; ignore if unavailable.
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
+        with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:
-            pass
 
     logger.info("worker.ready")
     try:
