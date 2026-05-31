@@ -51,7 +51,9 @@ class RabbitMQClient:
     async def declare_queue(self, name: str, *, durable: bool = True) -> aio_pika.abc.AbstractQueue:
         return await self.channel.declare_queue(name, durable=durable)
 
-    async def publish(self, queue: str, body: bytes, *, content_type: str = "application/json") -> None:
+    async def publish(
+        self, queue: str, body: bytes, *, content_type: str = "application/json"
+    ) -> None:
         await self.channel.default_exchange.publish(
             aio_pika.Message(body=body, content_type=content_type),
             routing_key=queue,
