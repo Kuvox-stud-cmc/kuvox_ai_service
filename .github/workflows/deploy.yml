@@ -1,8 +1,14 @@
 name: Deploy
 
 on:
-  push:
-    branches: [develop, main]
+  # CD is PAUSED — there is no remote host to deploy to (the DigitalOcean Droplet was
+  # destroyed; services now run locally on a Mac via `make dev` + a Cloudflare Tunnel).
+  # The workflow is kept but made manual-only (Actions tab → "Run workflow"). To resume
+  # automatic deploys, restore the `push:` trigger below and re-point the DROPLET_* repo
+  # secrets/variables (or switch to a self-hosted runner).
+  workflow_dispatch:
+  # push:
+  #   branches: [develop, main]
 
 env:
   COMPOSE_FILE: docker-compose.prod.yml
