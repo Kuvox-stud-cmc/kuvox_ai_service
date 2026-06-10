@@ -1,5 +1,14 @@
-# Local development infrastructure for the Kuvox AI service.
+# Self-contained local development infrastructure for the Kuvox AI service ALONE.
 # The service itself is NOT started here — run `make dev` for that.
+#
+# Qdrant is owned by this service; Redis / RabbitMQ / MinIO are provided here so the
+# ai-service can be developed standalone without the api repo checked out.
+#
+# >>> If you develop BOTH api/ and ai-service/ together, do NOT run this file. <<<
+# Use the workspace-root docker-compose.yml (`cd .. && make up`) instead — it brings up
+# a single shared infra set. This file and the api compose both publish Redis (6379),
+# RabbitMQ (5672/15672) and MinIO (9000/9001), so running more than one infra set at
+# once collides on those host ports. Run exactly one set, never two.
 services:
   qdrant:
     image: qdrant/qdrant:v1.12.4

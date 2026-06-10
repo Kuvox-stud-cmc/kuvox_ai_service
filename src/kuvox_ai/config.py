@@ -15,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-LLMProvider = Literal["stub"]
+LLMProvider = Literal["groq", "openai", "claude"]
 # NOTE: extend the LLMProvider literal as real provider implementations land.
 
 
@@ -66,9 +66,13 @@ class Settings(BaseSettings):
     s3_create_bucket: bool = True
 
     # --- LLM -------------------------------------------------------------
-    llm_provider: LLMProvider = "stub"
-    llm_api_key: str | None = None
-    llm_model: str = "stub-model"
+    llm_provider: LLMProvider = "openai"
+    groq_llm_api_key: str | None = None
+    groq_llm_model: str | None = None
+    openai_llm_api_key: str | None = None
+    openai_llm_model: str | None = None
+    claude_llm_api_key: str | None = None
+    claude_llm_model: str | None = None
 
     # --- Models ----------------------------------------------------------
     model_dir: Path = Field(default=Path("./data/models"))
