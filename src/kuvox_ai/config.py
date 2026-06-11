@@ -15,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-LLMProvider = Literal["groq", "openai", "claude"]
+LLMProvider = Literal["stub", "groq", "openai", "claude"]
 # NOTE: extend the LLMProvider literal as real provider implementations land.
 
 
