@@ -37,6 +37,11 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY --chown=kuvox:kuvox src ./src
 
+# Writable data dir for the embedded Kuzu graph DB and model files
+# (config defaults: ./data/kuzu, ./data/models). Owned by the non-root user
+# so a named volume mounted here inherits kuvox ownership at creation.
+RUN mkdir -p /app/data && chown -R kuvox:kuvox /app/data
+
 USER kuvox
 
 EXPOSE 8000

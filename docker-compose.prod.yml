@@ -27,6 +27,9 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
+    volumes:
+      # Persists the embedded Kuzu graph DB + model files across redeploys.
+      - kuzu-data:/app/data
     depends_on:
       qdrant:
         condition: service_healthy
@@ -132,6 +135,7 @@ volumes:
   redis-data:
   rabbitmq-data:
   minio-data:
+  kuzu-data:
 
 networks:
   kuvox:
