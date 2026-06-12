@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     s3_create_bucket: bool = True
 
     # --- LLM -------------------------------------------------------------
-    llm_provider: LLMProvider = "openai"
+    llm_provider: LLMProvider = "stub"
     groq_llm_api_key: str | None = None
     groq_llm_model: str | None = None
     openai_llm_api_key: str | None = None
@@ -76,6 +76,19 @@ class Settings(BaseSettings):
 
     # --- Models ----------------------------------------------------------
     model_dir: Path = Field(default=Path("./data/models"))
+
+    @property
+    def llm_model(self) -> str:
+        """Resolve the model name for the active provider (stub has no model)."""
+        match self.llm_provider:
+            case "groq":
+                return self.groq_llm_model or "groq"
+            case "openai":
+                return self.openai_llm_model or "openai"
+            case "claude":
+                return self.claude_llm_model or "claude"
+            case _:
+                return "stub"
 
     @property
     def cors_origin_list(self) -> list[str]:
