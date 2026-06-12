@@ -31,7 +31,9 @@ class KuzuClient:
         return cls(db_path=settings.kuzu_db_path)
 
     async def connect(self) -> None:
-        self._db_path.mkdir(parents=True, exist_ok=True)
+        # Kuzu stores a database as a single file; create only the parent
+        # directory and let Kuzu create the db file at ``_db_path``.
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info("kuzu.connecting", path=str(self._db_path))
 
         def _open() -> tuple[kuzu.Database, kuzu.Connection]:
