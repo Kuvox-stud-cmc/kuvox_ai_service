@@ -38,7 +38,7 @@ format: ## Auto-format with ruff.
 	$(PY) -m ruff format src tests
 	$(PY) -m ruff check --fix src tests
 
-up: ## Start local infra (Qdrant, Redis, RabbitMQ, MinIO) via docker-compose.
+up: ## Start local infra (Qdrant, Redis, RabbitMQ, SeaweedFS) via docker-compose.
 	docker compose up -d
 
 down: ## Stop local infra.
