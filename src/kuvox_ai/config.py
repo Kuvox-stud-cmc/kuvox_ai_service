@@ -58,10 +58,10 @@ class Settings(BaseSettings):
     queue_sandbox: str = "kuvox.sandbox"
 
     # --- Object storage (S3-compatible) ----------------------------------
-    s3_endpoint_url: str = "http://localhost:9000"
+    s3_endpoint_url: str = "http://localhost:8333"
     s3_region: str = "us-east-1"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin"
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
     s3_bucket: str = "kuvox-media"
     s3_create_bucket: bool = True
 

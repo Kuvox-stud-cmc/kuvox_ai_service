@@ -10,7 +10,7 @@ data side only and trusts its caller for authentication.
 ## Prerequisites
 
 - Python **3.11+** (3.12 recommended; the Docker image pins 3.12-slim).
-- Docker + Docker Compose (for local Qdrant / Redis / RabbitMQ / MinIO).
+- Docker + Docker Compose (for local Qdrant / Redis / RabbitMQ / SeaweedFS).
 - `make`. On Windows install via Chocolatey (`choco install make`) or run the
   underlying commands directly — every target is a one-liner you can paste.
 
@@ -28,7 +28,7 @@ Then:
 - API docs: <http://localhost:8000/docs>
 - Health: <http://localhost:8000/health>
 - RabbitMQ UI: <http://localhost:15672> (guest / guest)
-- MinIO console: <http://localhost:9001> (minioadmin / minioadmin)
+- SeaweedFS console: <http://localhost:8333> 
 
 Run a worker in a separate shell:
 
@@ -67,7 +67,7 @@ their `__init__.py`.
 | --------------- | ------------------------------------------------------------- |
 | `make install`  | Create `.venv` and install with `[dev]` extras                |
 | `make dev`      | Run FastAPI with auto-reload                                  |
-| `make up`       | Start local infra (Qdrant, Redis, RabbitMQ, MinIO)            |
+| `make up`       | Start local infra (Qdrant, Redis, RabbitMQ, SeaweedFS)            |
 | `make down`     | Stop local infra                                              |
 | `make test`     | Run pytest                                                    |
 | `make lint`     | Ruff lint + format check                                      |

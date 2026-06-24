@@ -1,13 +1,13 @@
 # Self-contained local development infrastructure for the Kuvox AI service ALONE.
 # The service itself is NOT started here — run `make dev` for that.
 #
-# Qdrant is owned by this service; Redis / RabbitMQ / MinIO are provided here so the
+# Qdrant is owned by this service; Redis / RabbitMQ / SeaweedFS are provided here so the
 # ai-service can be developed standalone without the api repo checked out.
 #
 # >>> If you develop BOTH api/ and ai-service/ together, do NOT run this file. <<<
 # Use the workspace-root docker-compose.yml (`cd .. && make up`) instead — it brings up
 # a single shared infra set. This file and the api compose both publish Redis (6379),
-# RabbitMQ (5672/15672) and MinIO (9000/9001), so running more than one infra set at
+# RabbitMQ (5672/15672) and SeaweedFS (8333), so running more than one infra set at
 # once collides on those host ports. Run exactly one set, never two.
 services:
   qdrant:
@@ -49,25 +49,55 @@ services:
       timeout: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+  seaweedfs-master:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs_master
+    restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9333:9333"    # Master HTTP
+      - "19333:19333"    # Master gRPC
+    command: master -mdir=/data
     volumes:
-      - minio-data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      - seaweedfs_master:/data
+  
+  seaweedfs-volume:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs-volume
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    command: volume -mserver=seaweedfs-master:9333 -dir=/data -port=8123
+    volumes:
+      - seaweedfs_volume:/data
+    depends_on:
+      - seaweedfs-master
+
+  seaweedfs-s3:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs_s3
+    restart: unless-stopped
+    ports:
+      - "8333:8333"    # S3-compatible API endpoint
+    command: s3 -filer=seaweedfs-filer:8888
+    depends_on:
+      - seaweedfs-filer
+
+  seaweedfs-filer:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs_filer
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    command: filer -master=seaweedfs-master:9333
+    volumes:
+      - seaweedfs_filer:/data
+    depends_on:
+      - seaweedfs-master
 
 volumes:
   qdrant-data:
   redis-data:
   rabbitmq-data:
-  minio-data:
+  seaweedfs_master:
+  seaweedfs_volume:
+  seaweedfs_filer:

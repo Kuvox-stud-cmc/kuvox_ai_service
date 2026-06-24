@@ -37,7 +37,13 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      minio:
+      seaweedfs-master:
+        condition: service_healthy
+      seaweedfs-volume:
+        condition: service_healthy
+      seaweedfs-s3:
+        condition: service_healthy
+      seaweedfs-filer:
         condition: service_healthy
     networks:
       - kuvox
@@ -109,23 +115,52 @@ services:
     networks:
       - kuvox
 
-  minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+  seaweedfs-master:
+    image: chrislusf/seaweedfs:latest
     restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:9333:9333"    # Master HTTP
+      - "127.0.0.1:19333:19333"    # Master gRPC
+    command: master -mdir=/data
     volumes:
-      - minio-data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      - seaweedfs_master:/data
+    networks:
+      - kuvox
+
+  seaweedfs-volume:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8123:8123"
+    command: volume -mserver=seaweedfs-master:9333 -dir=/data -port=8123
+    volumes:
+      - seaweedfs_volume:/data
+    depends_on:
+      - seaweedfs-master
+    networks:
+      - kuvox
+
+  seaweedfs-s3:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8333:8333"    # S3-compatible API endpoint
+    command: s3 -filer=seaweedfs-filer:8888
+    depends_on:
+      - seaweedfs-filer
+    networks:
+      - kuvox
+
+  seaweedfs-filer:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8888"
+    command: filer -master=seaweedfs-master:9333
+    volumes:
+      - seaweedfs_filer:/data
+    depends_on:
+      - seaweedfs-master
     networks:
       - kuvox
 
@@ -134,7 +169,9 @@ volumes:
   qdrant-data:
   redis-data:
   rabbitmq-data:
-  minio-data:
+  seaweedfs_master:
+  seaweedfs_volume:
+  seaweedfs_filer:
   kuzu-data:
 
 networks:

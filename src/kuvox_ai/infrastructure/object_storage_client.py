@@ -1,4 +1,4 @@
-"""Async wrapper around an S3-compatible object store (MinIO/AWS S3) via boto3.
+"""Async wrapper around an S3-compatible object store (SeaweedFS/AWS S3) via boto3.
 
 boto3 is synchronous; calls are offloaded to a thread.
 """
@@ -29,8 +29,8 @@ class ObjectStorageClient:
         *,
         endpoint_url: str,
         region: str,
-        access_key: str,
-        secret_key: str,
+        access_key: str | None = None,
+        secret_key: str | None = None,
         bucket: str,
         create_bucket: bool,
     ) -> None:
@@ -65,6 +65,12 @@ class ObjectStorageClient:
 
     async def connect(self) -> None:
         logger.info("s3.connecting", endpoint=self._endpoint_url, bucket=self._bucket)
+        if self._access_key and self._secret_key:
+            client_config = Config(signature_version="s3v4")
+        else:
+            from botocore import UNSIGNED
+            client_config = Config(signature_version=UNSIGNED)
+
         self._client = await asyncio.to_thread(
             boto3.client,
             "s3",
@@ -72,7 +78,7 @@ class ObjectStorageClient:
             region_name=self._region,
             aws_access_key_id=self._access_key,
             aws_secret_access_key=self._secret_key,
-            config=Config(signature_version="s3v4"),
+            config=client_config,
         )
         if self._create_bucket:
             await self._ensure_bucket()
