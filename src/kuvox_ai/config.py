@@ -54,7 +54,6 @@ class Settings(BaseSettings):
     # --- RabbitMQ --------------------------------------------------------
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
     rabbitmq_exchange: str = "kuvox.events"
-    queue_ingestion: str = "kuvox.ingestion"
     queue_rendering: str = "kuvox.rendering"
     queue_sandbox: str = "kuvox.sandbox"
     media_optimization_requested_queue: str = "media.optimization.requested"
@@ -62,6 +61,11 @@ class Settings(BaseSettings):
     media_optimization_completed_routing_key: str = "media.optimization.completed"
     media_optimization_failed_routing_key: str = "media.optimization.failed"
     media_optimization_concurrency: int = 1
+    ingestion_requested_queue: str = "ingestion.requested"
+    ingestion_requested_routing_key: str = "ingestion.requested"
+    ingestion_completed_routing_key: str = "ingestion.completed"
+    ingestion_failed_routing_key: str = "ingestion.failed"
+    ingestion_concurrency: int = 1
 
     # --- Object storage (S3-compatible) ----------------------------------
     s3_endpoint_url: str = "http://localhost:8333"
@@ -84,6 +88,9 @@ class Settings(BaseSettings):
     video_proxy_max_width: int = 1280
     image_max_width: int = 1920
     thumbnail_width: int = 320
+
+    # --- Ingestion --------------------------------------------------------
+    ingestion_work_dir: Path = Path("/tmp/kuvox-ingestion")
 
     # --- LLM -------------------------------------------------------------
     llm_provider: LLMProvider = "stub"

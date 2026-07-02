@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import uuid4
 
@@ -50,8 +52,7 @@ class MediaOptimizationService:
     async def optimize(self, request: MediaOptimizationRequested) -> MediaOptimizationCompleted:
         self._work_dir.mkdir(parents=True, exist_ok=True)
 
-        with TemporaryDirectory(dir=self._work_dir) as temp_dir:
-            job_dir = Path(temp_dir)
+        with temporary_job_dir(self._work_dir) as job_dir:
             input_path = job_dir / safe_filename(request.original_file_name)
 
             await self._storage.download_file(request.bucket_name, request.object_key, input_path)
@@ -314,6 +315,16 @@ class MediaOptimizationService:
 
 def safe_filename(filename: str) -> str:
     return Path(filename).name or "input"
+
+
+@contextmanager
+def temporary_job_dir(work_dir: Path) -> Iterator[Path]:
+    job_dir = work_dir / f"job-{uuid4().hex}"
+    job_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        yield job_dir
+    finally:
+        shutil.rmtree(job_dir, ignore_errors=True)
 
 
 def output_base_key(request: MediaOptimizationRequested) -> str:

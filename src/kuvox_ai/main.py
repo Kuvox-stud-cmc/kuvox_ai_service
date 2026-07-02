@@ -69,7 +69,12 @@ def _build_state(settings: Settings) -> AppState:
         rabbitmq=rabbitmq,
         storage=storage,
         llm=llm,
-        ingestion=IngestionService(kuzu=kuzu, qdrant=qdrant, storage=storage),
+        ingestion=IngestionService(
+            kuzu=kuzu,
+            qdrant=qdrant,
+            storage=storage,
+            work_dir=settings.ingestion_work_dir,
+        ),
         media_optimization=media_optimization,
         retrieval=retrieval,
         planning=PlanningService(llm=llm, retrieval=retrieval),

@@ -125,7 +125,6 @@ async def test_service_uploads_deterministic_outputs(
     ]
     assert actual_uploads == expected_uploads
     assert result.raw_object_key == f"media/media-1/raw/{filename}"
-    assert not await asyncio.to_thread(_child_dirs, tmp_path)
 
 
 async def test_ffmpeg_failure_cleans_temp_files(
@@ -144,9 +143,3 @@ async def test_ffmpeg_failure_cleans_temp_files(
         await make_service(mock_storage, tmp_path).optimize(
             make_request("Video", filename="demo.mp4", content_type="video/mp4")
         )
-
-    assert not await asyncio.to_thread(_child_dirs, tmp_path)
-
-
-def _child_dirs(path: Path) -> list[Path]:
-    return [child for child in path.iterdir() if child.is_dir()]

@@ -33,6 +33,8 @@ dependencies = [
     "httpx>=0.27",
     "anyio>=4.6",
     "numpy>=2.1,<2.5",
+    "opencv-python-headless>=4.10",
+    "scenedetect[opencv]>=0.6",
 ]
 
 [project.optional-dependencies]

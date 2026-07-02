@@ -21,6 +21,9 @@ ENV/
 
 # Test / coverage
 .pytest_cache/
+pytest-cache-files-*/
+pytest-local-tmp/
+local-pytest-temp-*/
 .coverage
 .coverage.*
 htmlcov/
@@ -55,3 +58,7 @@ logs/
 .docker-data/
 
 .claude
+
+# Local agent/build scratch
+.codex-build/
+.codex-pytest-tmp/
