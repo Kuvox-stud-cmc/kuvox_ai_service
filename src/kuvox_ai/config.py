@@ -53,9 +53,15 @@ class Settings(BaseSettings):
 
     # --- RabbitMQ --------------------------------------------------------
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_exchange: str = "kuvox.events"
     queue_ingestion: str = "kuvox.ingestion"
     queue_rendering: str = "kuvox.rendering"
     queue_sandbox: str = "kuvox.sandbox"
+    media_optimization_requested_queue: str = "media.optimization.requested"
+    media_optimization_requested_routing_key: str = "media.optimization.requested"
+    media_optimization_completed_routing_key: str = "media.optimization.completed"
+    media_optimization_failed_routing_key: str = "media.optimization.failed"
+    media_optimization_concurrency: int = 1
 
     # --- Object storage (S3-compatible) ----------------------------------
     s3_endpoint_url: str = "http://localhost:8333"
@@ -63,7 +69,21 @@ class Settings(BaseSettings):
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
     s3_bucket: str = "kuvox-media"
+    s3_raw_bucket: str = "kuvox-raw"
+    s3_canonical_bucket: str = "kuvox-canonical"
+    s3_proxy_bucket: str = "kuvox-proxy"
+    s3_thumbnail_bucket: str = "kuvox-thumbnails"
+    s3_temp_bucket: str = "kuvox-temp"
     s3_create_bucket: bool = True
+
+    # --- Media optimization ----------------------------------------------
+    media_work_dir: Path = Path("/tmp/kuvox-media")
+    media_delete_raw_after_optimization: bool = False
+    video_canonical_crf: int = 28
+    video_proxy_crf: int = 30
+    video_proxy_max_width: int = 1280
+    image_max_width: int = 1920
+    thumbnail_width: int = 320
 
     # --- LLM -------------------------------------------------------------
     llm_provider: LLMProvider = "stub"

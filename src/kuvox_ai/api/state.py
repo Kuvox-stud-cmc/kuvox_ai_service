@@ -19,6 +19,7 @@ from kuvox_ai.infrastructure import (
     RedisClient,
 )
 from kuvox_ai.modules.ingestion import IngestionService
+from kuvox_ai.modules.media_optimization import MediaOptimizationService
 from kuvox_ai.modules.planning import PlanningService
 from kuvox_ai.modules.rendering import RenderingService
 from kuvox_ai.modules.retrieval import RetrievalService
@@ -37,6 +38,7 @@ class AppState:
     llm: LLMClient
 
     ingestion: IngestionService
+    media_optimization: MediaOptimizationService
     retrieval: RetrievalService
     planning: PlanningService
     rendering: RenderingService

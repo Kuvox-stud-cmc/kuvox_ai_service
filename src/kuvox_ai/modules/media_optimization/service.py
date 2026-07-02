@@ -1,0 +1,393 @@
+"""Media storage optimization service."""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
+from uuid import uuid4
+
+from kuvox_ai.infrastructure.object_storage_client import ObjectStorageClient
+from kuvox_ai.modules.media_optimization import ffmpeg
+from kuvox_ai.modules.media_optimization.models import (
+    MediaKind,
+    MediaOptimizationCompleted,
+    MediaOptimizationRequested,
+    OptimizedObject,
+)
+
+
+class MediaOptimizationService:
+    """Download raw media, optimize it with FFmpeg, and upload deterministic outputs."""
+
+    def __init__(
+        self,
+        *,
+        storage: ObjectStorageClient,
+        canonical_bucket: str,
+        proxy_bucket: str,
+        thumbnail_bucket: str,
+        work_dir: Path,
+        video_canonical_crf: int = 28,
+        video_proxy_crf: int = 30,
+        video_proxy_max_width: int = 1280,
+        image_max_width: int = 1920,
+        thumbnail_width: int = 320,
+    ) -> None:
+        self._storage = storage
+        self._canonical_bucket = canonical_bucket
+        self._proxy_bucket = proxy_bucket
+        self._thumbnail_bucket = thumbnail_bucket
+        self._work_dir = work_dir
+        self._video_canonical_crf = video_canonical_crf
+        self._video_proxy_crf = video_proxy_crf
+        self._video_proxy_max_width = video_proxy_max_width
+        self._image_max_width = image_max_width
+        self._thumbnail_width = thumbnail_width
+
+    async def optimize(self, request: MediaOptimizationRequested) -> MediaOptimizationCompleted:
+        self._work_dir.mkdir(parents=True, exist_ok=True)
+
+        with TemporaryDirectory(dir=self._work_dir) as temp_dir:
+            job_dir = Path(temp_dir)
+            input_path = job_dir / safe_filename(request.original_file_name)
+
+            await self._storage.download_file(request.bucket_name, request.object_key, input_path)
+
+            if request.kind == MediaKind.video:
+                return await self._optimize_video(request, input_path, job_dir)
+            if request.kind == MediaKind.audio:
+                return await self._optimize_audio(request, input_path, job_dir)
+            if request.kind == MediaKind.image:
+                return await self._optimize_image(request, input_path, job_dir)
+
+            raise ValueError(f"Unsupported media kind: {request.kind}")
+
+    async def _optimize_video(
+        self,
+        request: MediaOptimizationRequested,
+        input_path: Path,
+        job_dir: Path,
+    ) -> MediaOptimizationCompleted:
+        canonical_path = job_dir / "canonical.mp4"
+        proxy_path = job_dir / "proxy.mp4"
+        poster_path = job_dir / "poster.webp"
+
+        await ffmpeg.run_command(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(input_path),
+                "-map_metadata",
+                "-1",
+                "-c:v",
+                "libx265",
+                "-crf",
+                str(self._video_canonical_crf),
+                "-preset",
+                "medium",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "96k",
+                "-movflags",
+                "+faststart",
+                str(canonical_path),
+            ]
+        )
+        await ffmpeg.run_command(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(input_path),
+                "-vf",
+                f"scale='min({self._video_proxy_max_width},iw)':-2",
+                "-c:v",
+                "libx264",
+                "-crf",
+                str(self._video_proxy_crf),
+                "-preset",
+                "veryfast",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "64k",
+                "-movflags",
+                "+faststart",
+                str(proxy_path),
+            ]
+        )
+        await ffmpeg.run_command(
+            [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                "00:00:03",
+                "-i",
+                str(input_path),
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=640:-2",
+                "-c:v",
+                "libwebp",
+                "-quality",
+                "75",
+                str(poster_path),
+            ]
+        )
+
+        base_key = output_base_key(request)
+        canonical = await self._upload_optimized(
+            canonical_path,
+            self._canonical_bucket,
+            f"{base_key}/canonical.mp4",
+            "video/mp4",
+        )
+        proxy = await self._upload_optimized(
+            proxy_path,
+            self._proxy_bucket,
+            f"{base_key}/proxy.mp4",
+            "video/mp4",
+        )
+        thumbnail = await self._upload_optimized(
+            poster_path,
+            self._thumbnail_bucket,
+            f"{base_key}/poster.webp",
+            "image/webp",
+        )
+        metadata = extract_basic_metadata(await ffmpeg.ffprobe_json(canonical_path))
+
+        return self._completed(
+            request,
+            canonical=canonical,
+            proxy=proxy,
+            thumbnail=thumbnail,
+            metadata=metadata,
+        )
+
+    async def _optimize_audio(
+        self,
+        request: MediaOptimizationRequested,
+        input_path: Path,
+        job_dir: Path,
+    ) -> MediaOptimizationCompleted:
+        canonical_path = job_dir / "canonical.opus"
+        await ffmpeg.run_command(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(input_path),
+                "-map_metadata",
+                "-1",
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "64k",
+                str(canonical_path),
+            ]
+        )
+
+        canonical = await self._upload_optimized(
+            canonical_path,
+            self._canonical_bucket,
+            f"{output_base_key(request)}/canonical.opus",
+            "audio/opus",
+        )
+        metadata = extract_basic_metadata(await ffmpeg.ffprobe_json(canonical_path))
+        return self._completed(request, canonical=canonical, metadata=metadata)
+
+    async def _optimize_image(
+        self,
+        request: MediaOptimizationRequested,
+        input_path: Path,
+        job_dir: Path,
+    ) -> MediaOptimizationCompleted:
+        canonical_path = job_dir / "canonical.webp"
+        thumb_path = job_dir / "thumb.webp"
+
+        await ffmpeg.run_command(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(input_path),
+                "-map_metadata",
+                "-1",
+                "-vf",
+                f"scale='min({self._image_max_width},iw)':-2",
+                "-c:v",
+                "libwebp",
+                "-quality",
+                "80",
+                str(canonical_path),
+            ]
+        )
+        await ffmpeg.run_command(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(input_path),
+                "-map_metadata",
+                "-1",
+                "-vf",
+                f"scale={self._thumbnail_width}:-2",
+                "-c:v",
+                "libwebp",
+                "-quality",
+                "70",
+                str(thumb_path),
+            ]
+        )
+
+        base_key = output_base_key(request)
+        canonical = await self._upload_optimized(
+            canonical_path,
+            self._canonical_bucket,
+            f"{base_key}/canonical.webp",
+            "image/webp",
+        )
+        thumbnail = await self._upload_optimized(
+            thumb_path,
+            self._thumbnail_bucket,
+            f"{base_key}/thumb.webp",
+            "image/webp",
+        )
+        metadata = extract_basic_metadata(await ffmpeg.ffprobe_json(canonical_path))
+        return self._completed(
+            request,
+            canonical=canonical,
+            thumbnail=thumbnail,
+            metadata=metadata,
+        )
+
+    async def _upload_optimized(
+        self,
+        source: Path,
+        bucket: str,
+        key: str,
+        content_type: str,
+    ) -> OptimizedObject:
+        await self._storage.upload_file(source, bucket, key, content_type=content_type)
+        stat = await asyncio.to_thread(source.stat)
+        return OptimizedObject(
+            bucket_name=bucket,
+            object_key=key,
+            content_type=content_type,
+            size_bytes=stat.st_size,
+        )
+
+    def _completed(
+        self,
+        request: MediaOptimizationRequested,
+        *,
+        canonical: OptimizedObject | None = None,
+        proxy: OptimizedObject | None = None,
+        thumbnail: OptimizedObject | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> MediaOptimizationCompleted:
+        data = metadata or {}
+        return MediaOptimizationCompleted(
+            event_id=str(uuid4()),
+            occurred_at=datetime.now(UTC),
+            source_event_id=request.event_id,
+            media_id=request.media_id,
+            canonical=canonical,
+            proxy=proxy,
+            thumbnail=thumbnail,
+            duration_seconds=data.get("durationSeconds"),
+            width=data.get("width"),
+            height=data.get("height"),
+            frame_rate=data.get("frameRate"),
+            codec=data.get("codec"),
+            raw_bucket_name=request.bucket_name,
+            raw_object_key=request.object_key,
+            raw_size_bytes=request.size_bytes,
+        )
+
+
+def safe_filename(filename: str) -> str:
+    return Path(filename).name or "input"
+
+
+def output_base_key(request: MediaOptimizationRequested) -> str:
+    return f"media/{request.media_id}"
+
+
+def extract_basic_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    streams = metadata.get("streams", [])
+    if not isinstance(streams, list):
+        streams = []
+
+    video_stream = next(
+        (s for s in streams if isinstance(s, dict) and s.get("codec_type") == "video"),
+        None,
+    )
+    audio_stream = next(
+        (s for s in streams if isinstance(s, dict) and s.get("codec_type") == "audio"),
+        None,
+    )
+    format_data = metadata.get("format", {})
+    duration = format_data.get("duration") if isinstance(format_data, dict) else None
+
+    if video_stream is not None:
+        return {
+            "durationSeconds": _optional_float(duration),
+            "width": _optional_int(video_stream.get("width")),
+            "height": _optional_int(video_stream.get("height")),
+            "frameRate": _parse_frame_rate(video_stream.get("avg_frame_rate")),
+            "codec": _optional_str(video_stream.get("codec_name")),
+        }
+
+    if audio_stream is not None:
+        return {
+            "durationSeconds": _optional_float(duration),
+            "codec": _optional_str(audio_stream.get("codec_name")),
+        }
+
+    return {}
+
+
+def _parse_frame_rate(value: object) -> float | None:
+    if not isinstance(value, str) or "/" not in value:
+        return None
+    numerator, denominator = value.split("/", 1)
+    try:
+        denominator_float = float(denominator)
+        if denominator_float == 0:
+            return None
+        return float(numerator) / denominator_float
+    except ValueError:
+        return None
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if not isinstance(value, str | int | float):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, str | int | float):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None

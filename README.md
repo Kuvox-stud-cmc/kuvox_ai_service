@@ -34,9 +34,17 @@ Run a worker in a separate shell:
 
 ```bash
 .venv/bin/python -m kuvox_ai.workers.ingestion_worker
+.venv/bin/python -m kuvox_ai.workers.media_optimization_worker
 .venv/bin/python -m kuvox_ai.workers.rendering_worker
 .venv/bin/python -m kuvox_ai.workers.sandbox_worker
 ```
+
+The media optimization worker consumes `media.optimization.requested` from the
+`kuvox.events` direct exchange, downloads raw media from SeaweedFS, writes
+canonical/proxy/thumbnail objects, and publishes `media.optimization.completed`
+or `media.optimization.failed`. These messages are media-library scoped and do not
+carry `projectId`; project/media association is handled by the API's Projects module.
+It requires `ffmpeg` and `ffprobe` on PATH.
 
 ## Module map
 
@@ -73,6 +81,7 @@ their `__init__.py`.
 | `make lint`     | Ruff lint + format check                                      |
 | `make format`   | Ruff auto-fix + format                                        |
 | `make typecheck`| Mypy in strict mode                                           |
+| `make worker-media-optimization` | Run the media optimization worker               |
 | `make clean`    | Drop build artifacts and tool caches                          |
 
 Integration tests are marked `@pytest.mark.integration` and require

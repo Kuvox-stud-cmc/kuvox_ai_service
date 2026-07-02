@@ -33,6 +33,7 @@ from kuvox_ai.infrastructure import (
 )
 from kuvox_ai.logging import configure_logging, get_logger
 from kuvox_ai.modules.ingestion import IngestionService
+from kuvox_ai.modules.media_optimization import MediaOptimizationService
 from kuvox_ai.modules.planning import PlanningService
 from kuvox_ai.modules.rendering import RenderingService
 from kuvox_ai.modules.retrieval import RetrievalService
@@ -49,6 +50,18 @@ def _build_state(settings: Settings) -> AppState:
     llm = build_llm_client(settings)
 
     retrieval = RetrievalService(kuzu=kuzu, qdrant=qdrant)
+    media_optimization = MediaOptimizationService(
+        storage=storage,
+        canonical_bucket=settings.s3_canonical_bucket,
+        proxy_bucket=settings.s3_proxy_bucket,
+        thumbnail_bucket=settings.s3_thumbnail_bucket,
+        work_dir=settings.media_work_dir,
+        video_canonical_crf=settings.video_canonical_crf,
+        video_proxy_crf=settings.video_proxy_crf,
+        video_proxy_max_width=settings.video_proxy_max_width,
+        image_max_width=settings.image_max_width,
+        thumbnail_width=settings.thumbnail_width,
+    )
     return AppState(
         kuzu=kuzu,
         qdrant=qdrant,
@@ -57,6 +70,7 @@ def _build_state(settings: Settings) -> AppState:
         storage=storage,
         llm=llm,
         ingestion=IngestionService(kuzu=kuzu, qdrant=qdrant, storage=storage),
+        media_optimization=media_optimization,
         retrieval=retrieval,
         planning=PlanningService(llm=llm, retrieval=retrieval),
         rendering=RenderingService(storage=storage),

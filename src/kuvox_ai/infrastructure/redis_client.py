@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import redis.asyncio as aioredis
 
 from kuvox_ai.config import Settings
@@ -29,7 +31,10 @@ class RedisClient:
 
     async def connect(self) -> None:
         logger.info("redis.connecting", url=self._url)
-        self._client = aioredis.from_url(self._url, decode_responses=True)
+        self._client = cast(
+            aioredis.Redis,
+            aioredis.from_url(self._url, decode_responses=True),  # type: ignore[no-untyped-call]
+        )
         logger.info("redis.connected")
 
     async def close(self) -> None:

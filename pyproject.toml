@@ -32,6 +32,7 @@ dependencies = [
     # Utilities
     "httpx>=0.27",
     "anyio>=4.6",
+    "numpy>=2.1,<2.5",
 ]
 
 [project.optional-dependencies]
@@ -47,6 +48,7 @@ dev = [
 [project.scripts]
 kuvox-ai = "kuvox_ai.main:run"
 kuvox-ingestion-worker = "kuvox_ai.workers.ingestion_worker:run"
+kuvox-media-optimization-worker = "kuvox_ai.workers.media_optimization_worker:run"
 kuvox-rendering-worker = "kuvox_ai.workers.rendering_worker:run"
 kuvox-sandbox-worker = "kuvox_ai.workers.sandbox_worker:run"
 
@@ -104,8 +106,9 @@ plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 # Third-party libs without first-class stubs.
-module = ["kuzu", "qdrant_client.*", "aio_pika.*", "boto3", "botocore.*"]
+module = ["kuzu", "qdrant_client.*", "aio_pika.*", "boto3", "botocore.*", "numpy", "numpy.*"]
 ignore_missing_imports = true
+follow_imports = "skip"
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]

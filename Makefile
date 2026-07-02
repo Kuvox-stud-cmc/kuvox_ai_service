@@ -2,16 +2,11 @@
 SHELL := /bin/sh
 
 PYTHON ?= python
+PY ?= $(PYTHON)
+PIP ?= pip
 VENV ?= .venv
-ifeq ($(OS),Windows_NT)
-    VENV_BIN := $(VENV)/Scripts
-else
-    VENV_BIN := $(VENV)/bin
-endif
-PIP := $(VENV_BIN)/pip
-PY := $(VENV_BIN)/python
 
-.PHONY: help install dev test lint typecheck format up down clean
+.PHONY: help install dev test lint typecheck format worker-media-optimization worker-media up down clean
 
 help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "Targets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -37,6 +32,11 @@ typecheck: ## Static-type check with mypy.
 format: ## Auto-format with ruff.
 	$(PY) -m ruff format src tests
 	$(PY) -m ruff check --fix src tests
+
+worker-media-optimization: ## Run the media optimization worker.
+	$(PY) -m kuvox_ai.workers.media_optimization_worker
+
+worker-media: worker-media-optimization ## Alias for worker-media-optimization.
 
 up: ## Start local infra (Qdrant, Redis, RabbitMQ, SeaweedFS) via docker-compose.
 	docker compose up -d
