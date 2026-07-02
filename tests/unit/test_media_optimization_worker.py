@@ -73,3 +73,76 @@ async def test_worker_publishes_failed_on_service_error(
     assert mock_rabbitmq.publish_json.await_args.args[1]["sourceEventId"] == "evt-1"
     assert mock_rabbitmq.publish_json.await_args.args[1]["errorCode"] == "RuntimeError"
     assert "projectId" not in mock_rabbitmq.publish_json.await_args.args[1]
+
+
+async def test_worker_schedules_retry_before_terminal_failure(
+    mock_rabbitmq: AsyncMock,
+) -> None:
+    service = AsyncMock()
+    service.optimize.side_effect = RuntimeError("temporary")
+
+    await handle_message_body(
+        requested_body(),
+        service=service,
+        rabbitmq=mock_rabbitmq,
+        completed_routing_key="media.optimization.completed",
+        failed_routing_key="media.optimization.failed",
+        queue_name="media.optimization.requested",
+        retry_attempt=1,
+        max_retry_attempts=3,
+        headers={"x-kuvox-attempt": 1},
+    )
+
+    mock_rabbitmq.publish_retry.assert_awaited_once()
+    assert mock_rabbitmq.publish_retry.await_args.args[:3] == (
+        "media.optimization.requested",
+        2,
+        requested_body(),
+    )
+    mock_rabbitmq.publish_json.assert_not_awaited()
+    mock_rabbitmq.publish_dlq.assert_not_awaited()
+
+
+async def test_worker_final_failure_publishes_failed_and_dlq(
+    mock_rabbitmq: AsyncMock,
+) -> None:
+    service = AsyncMock()
+    service.optimize.side_effect = RuntimeError("permanent")
+
+    await handle_message_body(
+        requested_body(),
+        service=service,
+        rabbitmq=mock_rabbitmq,
+        completed_routing_key="media.optimization.completed",
+        failed_routing_key="media.optimization.failed",
+        queue_name="media.optimization.requested",
+        retry_attempt=3,
+        max_retry_attempts=3,
+        headers={"x-kuvox-attempt": 3},
+    )
+
+    mock_rabbitmq.publish_json.assert_awaited_once()
+    assert mock_rabbitmq.publish_json.await_args.args[0] == "media.optimization.failed"
+    mock_rabbitmq.publish_dlq.assert_awaited_once()
+    mock_rabbitmq.publish_retry.assert_not_awaited()
+
+
+async def test_worker_invalid_message_dlqs_when_queue_context_present(
+    mock_rabbitmq: AsyncMock,
+) -> None:
+    service = AsyncMock()
+
+    await handle_message_body(
+        b'{"projectId":"project-1"}',
+        service=service,
+        rabbitmq=mock_rabbitmq,
+        completed_routing_key="media.optimization.completed",
+        failed_routing_key="media.optimization.failed",
+        queue_name="media.optimization.requested",
+        retry_attempt=0,
+        max_retry_attempts=3,
+    )
+
+    service.optimize.assert_not_awaited()
+    mock_rabbitmq.publish_dlq.assert_awaited_once()
+    mock_rabbitmq.publish_json.assert_not_awaited()

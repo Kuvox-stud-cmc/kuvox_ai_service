@@ -2,9 +2,14 @@
 SHELL := /bin/sh
 
 PYTHON ?= python
-PY ?= $(PYTHON)
-PIP ?= pip
 VENV ?= .venv
+ifeq ($(OS),Windows_NT)
+    VENV_BIN := $(VENV)/Scripts
+else
+    VENV_BIN := $(VENV)/bin
+endif
+PIP := $(VENV_BIN)/pip
+PY := $(VENV_BIN)/python
 
 .PHONY: help install dev test lint typecheck format worker-media-optimization worker-ingestion worker-media up down clean
 
