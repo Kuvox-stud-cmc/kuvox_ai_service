@@ -53,17 +53,68 @@ class Settings(BaseSettings):
 
     # --- RabbitMQ --------------------------------------------------------
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
-    queue_ingestion: str = "kuvox.ingestion"
+    rabbitmq_exchange: str = "kuvox.events"
+    rabbitmq_retry_delays_seconds: str = "30,120,600"
+    rabbitmq_retry_attempts: int = 3
     queue_rendering: str = "kuvox.rendering"
     queue_sandbox: str = "kuvox.sandbox"
+    media_optimization_requested_queue: str = "media.optimization.requested"
+    media_optimization_requested_routing_key: str = "media.optimization.requested"
+    media_optimization_completed_routing_key: str = "media.optimization.completed"
+    media_optimization_failed_routing_key: str = "media.optimization.failed"
+    media_optimization_concurrency: int = 1
+    ingestion_requested_queue: str = "ingestion.requested"
+    ingestion_requested_routing_key: str = "ingestion.requested"
+    ingestion_completed_routing_key: str = "ingestion.completed"
+    ingestion_failed_routing_key: str = "ingestion.failed"
+    ingestion_concurrency: int = 1
 
     # --- Object storage (S3-compatible) ----------------------------------
-    s3_endpoint_url: str = "http://localhost:9000"
+    s3_endpoint_url: str = "http://localhost:8333"
     s3_region: str = "us-east-1"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin"
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
     s3_bucket: str = "kuvox-media"
+    s3_raw_bucket: str = "kuvox-raw"
+    s3_canonical_bucket: str = "kuvox-canonical"
+    s3_proxy_bucket: str = "kuvox-proxy"
+    s3_thumbnail_bucket: str = "kuvox-thumbnails"
+    s3_temp_bucket: str = "kuvox-temp"
     s3_create_bucket: bool = True
+
+    # --- Media optimization ----------------------------------------------
+    media_work_dir: Path = Path("/tmp/kuvox-media")
+    media_delete_raw_after_optimization: bool = False
+    video_canonical_crf: int = 28
+    video_proxy_crf: int = 30
+    video_proxy_max_width: int = 1280
+    image_max_width: int = 1920
+    thumbnail_width: int = 320
+
+    # --- Ingestion --------------------------------------------------------
+    ingestion_work_dir: Path = Path("/tmp/kuvox-ingestion")
+    visual_collection_name: str = "shots_visual"
+    visual_embedding_dim: int = 512
+    transcript_collection_name: str = "shots_transcript"
+    audio_collection_name: str = "shots_audio"
+    ocr_collection_name: str = "shots_ocr"
+    text_embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+    text_embedding_dim: int = 384
+    text_embedding_device: str = "auto"
+    text_embedding_batch_size: int = 32
+    whisper_model_name: str = "small"
+    whisper_device: str = "auto"
+    whisper_compute_type: str = "auto"
+    audio_embedding_dim: int = 1024
+    audio_embedding_device: str = "auto"
+    audio_embedding_batch_size: int = 16
+    ocr_languages: str = "en"
+    ocr_gpu: str = "auto"
+    ocr_min_confidence: float = 0.3
+    clip_model_name: str = "ViT-B-32"
+    clip_pretrained: str = "laion2b_s34b_b79k"
+    clip_device: str = "auto"
+    clip_batch_size: int = 16
 
     # --- LLM -------------------------------------------------------------
     llm_provider: LLMProvider = "stub"
@@ -93,6 +144,18 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def ocr_language_list(self) -> list[str]:
+        return [language.strip() for language in self.ocr_languages.split(",") if language.strip()]
+
+    @property
+    def rabbitmq_retry_delay_list(self) -> list[int]:
+        return [
+            int(delay.strip())
+            for delay in self.rabbitmq_retry_delays_seconds.split(",")
+            if delay.strip()
+        ]
 
     @property
     def is_development(self) -> bool:

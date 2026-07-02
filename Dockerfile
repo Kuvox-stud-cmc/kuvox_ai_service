@@ -11,7 +11,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /build
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential \
+ && apt-get install -y --no-install-recommends \
+      build-essential \
+      ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
@@ -29,7 +31,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH=/usr/local/bin:$PATH
 
 # Non-root user.
-RUN groupadd --system kuvox \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system kuvox \
  && useradd --system --gid kuvox --home /app --shell /usr/sbin/nologin kuvox
 
 WORKDIR /app

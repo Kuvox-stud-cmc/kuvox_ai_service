@@ -33,6 +33,7 @@ from kuvox_ai.infrastructure import (
 )
 from kuvox_ai.logging import configure_logging, get_logger
 from kuvox_ai.modules.ingestion import IngestionService
+from kuvox_ai.modules.media_optimization import MediaOptimizationService
 from kuvox_ai.modules.planning import PlanningService
 from kuvox_ai.modules.rendering import RenderingService
 from kuvox_ai.modules.retrieval import RetrievalService
@@ -49,6 +50,18 @@ def _build_state(settings: Settings) -> AppState:
     llm = build_llm_client(settings)
 
     retrieval = RetrievalService(kuzu=kuzu, qdrant=qdrant)
+    media_optimization = MediaOptimizationService(
+        storage=storage,
+        canonical_bucket=settings.s3_canonical_bucket,
+        proxy_bucket=settings.s3_proxy_bucket,
+        thumbnail_bucket=settings.s3_thumbnail_bucket,
+        work_dir=settings.media_work_dir,
+        video_canonical_crf=settings.video_canonical_crf,
+        video_proxy_crf=settings.video_proxy_crf,
+        video_proxy_max_width=settings.video_proxy_max_width,
+        image_max_width=settings.image_max_width,
+        thumbnail_width=settings.thumbnail_width,
+    )
     return AppState(
         kuzu=kuzu,
         qdrant=qdrant,
@@ -56,7 +69,35 @@ def _build_state(settings: Settings) -> AppState:
         rabbitmq=rabbitmq,
         storage=storage,
         llm=llm,
-        ingestion=IngestionService(kuzu=kuzu, qdrant=qdrant, storage=storage),
+        ingestion=IngestionService(
+            kuzu=kuzu,
+            qdrant=qdrant,
+            storage=storage,
+            work_dir=settings.ingestion_work_dir,
+            visual_collection_name=settings.visual_collection_name,
+            visual_embedding_dim=settings.visual_embedding_dim,
+            transcript_collection_name=settings.transcript_collection_name,
+            audio_collection_name=settings.audio_collection_name,
+            ocr_collection_name=settings.ocr_collection_name,
+            text_embedding_model_name=settings.text_embedding_model_name,
+            text_embedding_dim=settings.text_embedding_dim,
+            text_embedding_device=settings.text_embedding_device,
+            text_embedding_batch_size=settings.text_embedding_batch_size,
+            whisper_model_name=settings.whisper_model_name,
+            whisper_device=settings.whisper_device,
+            whisper_compute_type=settings.whisper_compute_type,
+            audio_embedding_dim=settings.audio_embedding_dim,
+            audio_embedding_device=settings.audio_embedding_device,
+            audio_embedding_batch_size=settings.audio_embedding_batch_size,
+            ocr_languages=settings.ocr_language_list,
+            ocr_gpu=settings.ocr_gpu,
+            ocr_min_confidence=settings.ocr_min_confidence,
+            clip_model_name=settings.clip_model_name,
+            clip_pretrained=settings.clip_pretrained,
+            clip_device=settings.clip_device,
+            clip_batch_size=settings.clip_batch_size,
+        ),
+        media_optimization=media_optimization,
         retrieval=retrieval,
         planning=PlanningService(llm=llm, retrieval=retrieval),
         rendering=RenderingService(storage=storage),

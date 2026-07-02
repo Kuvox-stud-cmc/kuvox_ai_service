@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
+from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
@@ -14,6 +18,16 @@ from kuvox_ai.infrastructure import (
     RedisClient,
     StubLLMClient,
 )
+
+
+@pytest.fixture
+def tmp_path() -> Iterator[Path]:
+    path = Path.cwd() / "pytest-local-tmp" / uuid4().hex
+    path.mkdir(parents=True, exist_ok=False)
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture

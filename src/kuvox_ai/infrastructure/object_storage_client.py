@@ -1,4 +1,4 @@
-"""Async wrapper around an S3-compatible object store (MinIO/AWS S3) via boto3.
+"""Async wrapper around an S3-compatible object store (SeaweedFS/AWS S3) via boto3.
 
 boto3 is synchronous; calls are offloaded to a thread.
 """
@@ -6,6 +6,7 @@ boto3 is synchronous; calls are offloaded to a thread.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import boto3
@@ -29,8 +30,8 @@ class ObjectStorageClient:
         *,
         endpoint_url: str,
         region: str,
-        access_key: str,
-        secret_key: str,
+        access_key: str | None = None,
+        secret_key: str | None = None,
         bucket: str,
         create_bucket: bool,
     ) -> None:
@@ -65,6 +66,14 @@ class ObjectStorageClient:
 
     async def connect(self) -> None:
         logger.info("s3.connecting", endpoint=self._endpoint_url, bucket=self._bucket)
+        config_kwargs: dict[str, Any] = {"s3": {"addressing_style": "path"}}
+        if self._access_key and self._secret_key:
+            client_config = Config(signature_version="s3v4", **config_kwargs)
+        else:
+            from botocore import UNSIGNED
+
+            client_config = Config(signature_version=UNSIGNED, **config_kwargs)
+
         self._client = await asyncio.to_thread(
             boto3.client,
             "s3",
@@ -72,10 +81,10 @@ class ObjectStorageClient:
             region_name=self._region,
             aws_access_key_id=self._access_key,
             aws_secret_access_key=self._secret_key,
-            config=Config(signature_version="s3v4"),
+            config=client_config,
         )
         if self._create_bucket:
-            await self._ensure_bucket()
+            await self._ensure_bucket(self._bucket)
         logger.info("s3.connected")
 
     async def close(self) -> None:
@@ -86,20 +95,24 @@ class ObjectStorageClient:
         self._client = None
         logger.info("s3.closed")
 
-    async def _ensure_bucket(self) -> None:
+    async def _ensure_bucket(self, bucket: str) -> None:
         def _check_and_create() -> None:
             assert self._client is not None
             try:
-                self._client.head_bucket(Bucket=self._bucket)
+                self._client.head_bucket(Bucket=bucket)
             except ClientError as err:
                 code = err.response.get("Error", {}).get("Code")
                 if code in {"404", "NoSuchBucket", "NotFound"}:
-                    logger.info("s3.creating_bucket", bucket=self._bucket)
-                    self._client.create_bucket(Bucket=self._bucket)
+                    logger.info("s3.creating_bucket", bucket=bucket)
+                    self._client.create_bucket(Bucket=bucket)
                 else:
                     raise
 
         await asyncio.to_thread(_check_and_create)
+
+    async def _ensure_bucket_if_enabled(self, bucket: str) -> None:
+        if self._create_bucket:
+            await self._ensure_bucket(bucket)
 
     async def put_object(self, key: str, body: bytes, *, content_type: str | None = None) -> None:
         def _put() -> None:
@@ -120,6 +133,57 @@ class ObjectStorageClient:
             return body
 
         return await asyncio.to_thread(_get)
+
+    async def download_file(self, bucket: str, key: str, destination: Path) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+
+        def _download() -> None:
+            assert self._client is not None
+            self._client.download_file(bucket, key, str(destination))
+
+        await asyncio.to_thread(_download)
+
+    async def upload_file(
+        self,
+        source: Path,
+        bucket: str,
+        key: str,
+        *,
+        content_type: str,
+    ) -> None:
+        await self._ensure_bucket_if_enabled(bucket)
+
+        def _upload() -> None:
+            assert self._client is not None
+            self._client.upload_file(
+                str(source),
+                bucket,
+                key,
+                ExtraArgs={"ContentType": content_type},
+            )
+
+        await asyncio.to_thread(_upload)
+
+    async def delete_object(self, bucket: str, key: str) -> None:
+        def _delete() -> None:
+            assert self._client is not None
+            self._client.delete_object(Bucket=bucket, Key=key)
+
+        await asyncio.to_thread(_delete)
+
+    async def object_exists(self, bucket: str, key: str) -> bool:
+        def _exists() -> bool:
+            assert self._client is not None
+            try:
+                self._client.head_object(Bucket=bucket, Key=key)
+                return True
+            except ClientError as err:
+                code = err.response.get("Error", {}).get("Code")
+                if code in {"404", "NoSuchKey", "NotFound"}:
+                    return False
+                raise
+
+        return await asyncio.to_thread(_exists)
 
     async def health_check(self) -> bool:
         try:

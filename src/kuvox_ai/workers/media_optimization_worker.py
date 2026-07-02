@@ -1,4 +1,4 @@
-"""Worker: consumes ingestion jobs from RabbitMQ."""
+"""Worker: consumes media optimization jobs from RabbitMQ."""
 
 from __future__ import annotations
 
@@ -12,12 +12,14 @@ import aio_pika
 from pydantic import ValidationError
 
 from kuvox_ai.config import Settings, get_settings
-from kuvox_ai.infrastructure.kuzu_client import KuzuClient
 from kuvox_ai.infrastructure.object_storage_client import ObjectStorageClient
-from kuvox_ai.infrastructure.qdrant_client import QdrantClient
 from kuvox_ai.infrastructure.rabbitmq_client import RabbitMQClient, retry_attempt
 from kuvox_ai.logging import configure_logging, get_logger
-from kuvox_ai.modules.ingestion import IngestionFailed, IngestionRequested, IngestionService
+from kuvox_ai.modules.media_optimization import (
+    MediaOptimizationFailed,
+    MediaOptimizationRequested,
+    MediaOptimizationService,
+)
 
 logger = get_logger(__name__)
 
@@ -25,7 +27,7 @@ logger = get_logger(__name__)
 async def handle_message_body(
     body: bytes,
     *,
-    service: IngestionService,
+    service: MediaOptimizationService,
     rabbitmq: RabbitMQClient,
     completed_routing_key: str,
     failed_routing_key: str,
@@ -35,9 +37,9 @@ async def handle_message_body(
     headers: dict[str, object] | None = None,
 ) -> None:
     try:
-        request = IngestionRequested.model_validate_json(body)
+        request = MediaOptimizationRequested.model_validate_json(body)
     except ValidationError as exc:
-        logger.warning("ingestion_worker.invalid_message", error=str(exc))
+        logger.warning("media_optimization_worker.invalid_message", error=str(exc))
         if queue_name is not None:
             await rabbitmq.publish_dlq(
                 queue_name,
@@ -49,7 +51,7 @@ async def handle_message_body(
         return
 
     try:
-        result = await service.ingest(request)
+        result = await service.optimize(request)
     except Exception as exc:  # noqa: BLE001
         if queue_name is not None and retry_attempt < max_retry_attempts:
             await rabbitmq.publish_retry(
@@ -61,14 +63,14 @@ async def handle_message_body(
                 headers=headers,
             )
             logger.warning(
-                "ingestion_worker.retry_scheduled",
+                "media_optimization_worker.retry_scheduled",
                 media_id=request.media_id,
                 attempt=retry_attempt + 1,
                 error=str(exc),
             )
             return
 
-        failed = IngestionFailed(
+        failed = MediaOptimizationFailed(
             event_id=str(uuid4()),
             occurred_at=datetime.now(UTC),
             source_event_id=request.event_id,
@@ -88,49 +90,32 @@ async def handle_message_body(
                 error_message=str(exc),
                 headers=headers,
             )
-        logger.warning("ingestion_worker.failed", media_id=request.media_id, error=str(exc))
+        logger.warning(
+            "media_optimization_worker.failed",
+            media_id=request.media_id,
+            error=str(exc),
+        )
         return
 
     await rabbitmq.publish_json(
         completed_routing_key,
         result.model_dump(by_alias=True, mode="json"),
     )
-    logger.info("ingestion_worker.completed", media_id=request.media_id)
+    logger.info("media_optimization_worker.completed", media_id=request.media_id)
 
 
-def build_service(
-    settings: Settings,
-    storage: ObjectStorageClient,
-    kuzu: KuzuClient,
-    qdrant: QdrantClient,
-) -> IngestionService:
-    return IngestionService(
+def build_service(settings: Settings, storage: ObjectStorageClient) -> MediaOptimizationService:
+    return MediaOptimizationService(
         storage=storage,
-        kuzu=kuzu,
-        qdrant=qdrant,
-        work_dir=settings.ingestion_work_dir,
-        visual_collection_name=settings.visual_collection_name,
-        visual_embedding_dim=settings.visual_embedding_dim,
-        transcript_collection_name=settings.transcript_collection_name,
-        audio_collection_name=settings.audio_collection_name,
-        ocr_collection_name=settings.ocr_collection_name,
-        text_embedding_model_name=settings.text_embedding_model_name,
-        text_embedding_dim=settings.text_embedding_dim,
-        text_embedding_device=settings.text_embedding_device,
-        text_embedding_batch_size=settings.text_embedding_batch_size,
-        whisper_model_name=settings.whisper_model_name,
-        whisper_device=settings.whisper_device,
-        whisper_compute_type=settings.whisper_compute_type,
-        audio_embedding_dim=settings.audio_embedding_dim,
-        audio_embedding_device=settings.audio_embedding_device,
-        audio_embedding_batch_size=settings.audio_embedding_batch_size,
-        ocr_languages=settings.ocr_language_list,
-        ocr_gpu=settings.ocr_gpu,
-        ocr_min_confidence=settings.ocr_min_confidence,
-        clip_model_name=settings.clip_model_name,
-        clip_pretrained=settings.clip_pretrained,
-        clip_device=settings.clip_device,
-        clip_batch_size=settings.clip_batch_size,
+        canonical_bucket=settings.s3_canonical_bucket,
+        proxy_bucket=settings.s3_proxy_bucket,
+        thumbnail_bucket=settings.s3_thumbnail_bucket,
+        work_dir=settings.media_work_dir,
+        video_canonical_crf=settings.video_canonical_crf,
+        video_proxy_crf=settings.video_proxy_crf,
+        video_proxy_max_width=settings.video_proxy_max_width,
+        image_max_width=settings.image_max_width,
+        thumbnail_width=settings.thumbnail_width,
     )
 
 
@@ -138,26 +123,22 @@ async def run_async() -> None:
     settings = get_settings()
     configure_logging(settings)
     logger.info(
-        "ingestion_worker.starting",
-        queue=settings.ingestion_requested_queue,
-        routing_key=settings.ingestion_requested_routing_key,
+        "media_optimization_worker.starting",
+        queue=settings.media_optimization_requested_queue,
+        routing_key=settings.media_optimization_requested_routing_key,
     )
 
     storage = ObjectStorageClient.from_settings(settings)
-    kuzu = KuzuClient.from_settings(settings)
-    qdrant = QdrantClient.from_settings(settings)
     rabbitmq = RabbitMQClient.from_settings(settings)
     await storage.connect()
-    await kuzu.connect()
-    await qdrant.connect()
     await rabbitmq.connect()
     await rabbitmq.declare_retry_topology(
-        settings.ingestion_requested_queue,
-        settings.ingestion_requested_routing_key,
+        settings.media_optimization_requested_queue,
+        settings.media_optimization_requested_routing_key,
         settings.rabbitmq_retry_delay_list,
     )
 
-    service = build_service(settings, storage, kuzu, qdrant)
+    service = build_service(settings, storage)
 
     async def handle_message(message: aio_pika.abc.AbstractIncomingMessage) -> None:
         async with message.process(requeue=True):
@@ -165,19 +146,19 @@ async def run_async() -> None:
                 message.body,
                 service=service,
                 rabbitmq=rabbitmq,
-                completed_routing_key=settings.ingestion_completed_routing_key,
-                failed_routing_key=settings.ingestion_failed_routing_key,
-                queue_name=settings.ingestion_requested_queue,
+                completed_routing_key=settings.media_optimization_completed_routing_key,
+                failed_routing_key=settings.media_optimization_failed_routing_key,
+                queue_name=settings.media_optimization_requested_queue,
                 retry_attempt=retry_attempt(dict(message.headers or {})),
                 max_retry_attempts=settings.rabbitmq_retry_attempts,
                 headers=dict(message.headers or {}),
             )
 
     await rabbitmq.consume_bound_queue(
-        settings.ingestion_requested_queue,
-        settings.ingestion_requested_routing_key,
+        settings.media_optimization_requested_queue,
+        settings.media_optimization_requested_routing_key,
         handle_message,
-        prefetch_count=settings.ingestion_concurrency,
+        prefetch_count=settings.media_optimization_concurrency,
     )
 
     stop = asyncio.Event()
@@ -186,16 +167,14 @@ async def run_async() -> None:
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, stop.set)
 
-    logger.info("ingestion_worker.ready")
+    logger.info("media_optimization_worker.ready")
     try:
         await stop.wait()
     finally:
-        logger.info("ingestion_worker.stopping")
+        logger.info("media_optimization_worker.stopping")
         await rabbitmq.close()
-        await qdrant.close()
-        await kuzu.close()
         await storage.close()
-        logger.info("ingestion_worker.stopped")
+        logger.info("media_optimization_worker.stopped")
 
 
 def run() -> None:

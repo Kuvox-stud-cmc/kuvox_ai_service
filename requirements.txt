@@ -43,7 +43,7 @@ sqlalchemy==2.0.*                # ORM (optional, for read access)
 # -----------------------------------------------------------------------------
 # Object storage
 # -----------------------------------------------------------------------------
-boto3==1.35.*                    # S3-compatible client (works with MinIO too)
+boto3==1.35.*                    # S3-compatible client (works with SeaweedFS too)
 aioboto3==13.2.*                 # async S3
 
 # -----------------------------------------------------------------------------
