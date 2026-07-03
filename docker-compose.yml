@@ -41,6 +41,9 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: kuvox
+      RABBITMQ_DEFAULT_PASS: kuvox
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
@@ -78,7 +81,9 @@ services:
     restart: unless-stopped
     ports:
       - "8333:8333"    # S3-compatible API endpoint
-    command: s3 -filer=seaweedfs-filer:8888
+    command: s3 -config=/etc/seaweedfs/s3.json -filer=seaweedfs-filer:8888
+    volumes:
+      - ../infra/seaweedfs:/etc/seaweedfs:ro
     depends_on:
       - seaweedfs-filer
 

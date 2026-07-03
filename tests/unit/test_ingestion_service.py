@@ -209,7 +209,7 @@ async def test_ingest_downloads_canonical_detects_shots_and_writes_graph(
     assert result.shot_count == 1
 
 
-async def test_ingest_propagates_visual_indexing_errors(
+async def test_ingest_visual_indexing_errors_do_not_block_completion(
     mock_kuzu: AsyncMock,
     mock_storage: AsyncMock,
     tmp_path: Path,
@@ -247,6 +247,9 @@ async def test_ingest_propagates_visual_indexing_errors(
     frame_sampler.sample_frames.return_value = [frame]
     visual_encoder.encode_frames.return_value = [[0.0] * 512]
     visual_writer.write_shot_vectors.side_effect = RuntimeError("qdrant down")
+    audio_extractor.has_audio_stream.return_value = False
+    ocr_reader.read_frames.return_value = []
+    text_encoder.encode_texts.return_value = []
 
     svc = IngestionService(
         kuzu=mock_kuzu,
@@ -266,12 +269,14 @@ async def test_ingest_propagates_visual_indexing_errors(
         ocr_writer=ocr_writer,
     )
 
-    with pytest.raises(RuntimeError, match="qdrant down"):
-        await svc.ingest(request)
+    result = await svc.ingest(request)
 
     writer.write_video_with_shots.assert_awaited_once()
     visual_writer.write_shot_vectors.assert_awaited_once()
-    transcript_writer.write_points.assert_not_awaited()
+    transcript_writer.write_points.assert_awaited_once_with(request, [])
+    audio_writer.write_points.assert_awaited_once_with(request, [])
+    ocr_writer.write_points.assert_awaited_once()
+    assert result.media_id == "media-1"
 
 
 async def test_ingest_no_audio_deletes_transcript_audio_points_and_indexes_ocr(

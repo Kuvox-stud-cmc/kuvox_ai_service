@@ -16,8 +16,20 @@ async def detect_video_shots(
     *,
     media_id: str,
     duration_seconds: float,
+    timeout_seconds: int = 30,
 ) -> list[DetectedShot]:
-    return await asyncio.to_thread(_detect_video_shots_sync, path, media_id, duration_seconds)
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_detect_video_shots_sync, path, media_id, duration_seconds),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError:
+        logger.warning(
+            "ingestion.shot_detection_timeout",
+            media_id=media_id,
+            timeout_seconds=timeout_seconds,
+        )
+        return [fallback_shot(media_id, duration_seconds)]
 
 
 def fallback_shot(media_id: str, duration_seconds: float) -> DetectedShot:
@@ -36,7 +48,7 @@ def _detect_video_shots_sync(
     path: Path, media_id: str, duration_seconds: float
 ) -> list[DetectedShot]:
     try:
-        from scenedetect import ContentDetector, detect  # type: ignore[import-not-found]
+        from scenedetect import ContentDetector, detect  # type: ignore[import-untyped]
 
         scenes = detect(str(path), ContentDetector())
         shots = [

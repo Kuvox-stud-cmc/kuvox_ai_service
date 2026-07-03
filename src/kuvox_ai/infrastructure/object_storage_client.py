@@ -30,8 +30,8 @@ class ObjectStorageClient:
         *,
         endpoint_url: str,
         region: str,
-        access_key: str | None = None,
-        secret_key: str | None = None,
+        access_key: str,
+        secret_key: str,
         bucket: str,
         create_bucket: bool,
     ) -> None:
@@ -45,11 +45,19 @@ class ObjectStorageClient:
 
     @classmethod
     def from_settings(cls, settings: Settings) -> ObjectStorageClient:
+        access_key = settings.s3_access_key
+        secret_key = settings.s3_secret_key
+
+        if not access_key or not secret_key:
+            raise ValueError(
+                "S3 configuration error: KUVOX_S3_ACCESS_KEY and KUVOX_S3_SECRET_KEY are required."
+            )
+
         return cls(
             endpoint_url=settings.s3_endpoint_url,
             region=settings.s3_region,
-            access_key=settings.s3_access_key,
-            secret_key=settings.s3_secret_key,
+            access_key=access_key,
+            secret_key=secret_key,
             bucket=settings.s3_bucket,
             create_bucket=settings.s3_create_bucket,
         )
@@ -67,12 +75,7 @@ class ObjectStorageClient:
     async def connect(self) -> None:
         logger.info("s3.connecting", endpoint=self._endpoint_url, bucket=self._bucket)
         config_kwargs: dict[str, Any] = {"s3": {"addressing_style": "path"}}
-        if self._access_key and self._secret_key:
-            client_config = Config(signature_version="s3v4", **config_kwargs)
-        else:
-            from botocore import UNSIGNED
-
-            client_config = Config(signature_version=UNSIGNED, **config_kwargs)
+        client_config = Config(signature_version="s3v4", **config_kwargs)
 
         self._client = await asyncio.to_thread(
             boto3.client,
@@ -139,7 +142,15 @@ class ObjectStorageClient:
 
         def _download() -> None:
             assert self._client is not None
-            self._client.download_file(bucket, key, str(destination))
+            response = self._client.get_object(Bucket=bucket, Key=key)
+            body = response["Body"]
+            try:
+                with destination.open("wb") as destination_file:
+                    for chunk in body.iter_chunks(chunk_size=1024 * 1024):
+                        if chunk:
+                            destination_file.write(chunk)
+            finally:
+                body.close()
 
         await asyncio.to_thread(_download)
 

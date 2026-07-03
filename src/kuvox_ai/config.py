@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production"]
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # --- RabbitMQ --------------------------------------------------------
-    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_url: str = "amqp://kuvox:kuvox@localhost:5672/"
     rabbitmq_exchange: str = "kuvox.events"
     rabbitmq_retry_delays_seconds: str = "30,120,600"
     rabbitmq_retry_attempts: int = 3
@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     s3_proxy_bucket: str = "kuvox-proxy"
     s3_thumbnail_bucket: str = "kuvox-thumbnails"
     s3_temp_bucket: str = "kuvox-temp"
-    s3_create_bucket: bool = True
+    s3_create_bucket: bool = False
 
     # --- Media optimization ----------------------------------------------
     media_work_dir: Path = Path("/tmp/kuvox-media")
@@ -115,6 +115,8 @@ class Settings(BaseSettings):
     clip_pretrained: str = "laion2b_s34b_b79k"
     clip_device: str = "auto"
     clip_batch_size: int = 16
+    visual_index_timeout_seconds: int = 60
+    optional_index_timeout_seconds: int = 60
 
     # --- LLM -------------------------------------------------------------
     llm_provider: LLMProvider = "stub"
@@ -160,6 +162,28 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.environment == "development"
+
+    @model_validator(mode="after")
+    def validate_storage_credentials(self) -> Settings:
+        has_access_key = bool(self.s3_access_key and self.s3_access_key.strip())
+        has_secret_key = bool(self.s3_secret_key and self.s3_secret_key.strip())
+
+        if not has_access_key and not has_secret_key:
+            raise ValueError(
+                "S3 configuration error: KUVOX_S3_ACCESS_KEY and KUVOX_S3_SECRET_KEY are required."
+            )
+
+        if not has_access_key:
+            raise ValueError(
+                "S3 configuration error: KUVOX_S3_ACCESS_KEY is required when KUVOX_S3_SECRET_KEY is set."
+            )
+
+        if not has_secret_key:
+            raise ValueError(
+                "S3 configuration error: KUVOX_S3_SECRET_KEY is required when KUVOX_S3_ACCESS_KEY is set."
+            )
+
+        return self
 
 
 @lru_cache(maxsize=1)

@@ -12,6 +12,9 @@ data side only and trusts its caller for authentication.
 - Python **3.11 or 3.12** (3.12 recommended; the Docker image pins 3.12-slim).
   The ML ingestion dependencies are not declared for newer Python versions yet.
 - Docker + Docker Compose (for local Qdrant / Redis / RabbitMQ / SeaweedFS).
+- FFmpeg tooling for media pipelines. Image optimization can use the bundled
+  `imageio-ffmpeg` binary, but video/audio optimization and ingestion still need
+  `ffprobe` available on PATH.
 - `make`. On Windows install via Chocolatey (`choco install make`) or run the
   underlying commands directly — every target is a one-liner you can paste.
 
@@ -37,11 +40,67 @@ python -m pip install -e ".[dev]"
 those ranges in `pyproject.toml`. Use a fresh Python 3.11/3.12 environment if
 pip reports that no matching NumPy or librosa distributions are available.
 
+## Environment Variables
+
+Copy `.env.example` to `ai-service/.env` for native local development. The same
+variable names are used on Linux, macOS, Windows, and Docker, but hostnames and
+filesystem paths differ by runtime.
+
+Native Linux with Docker-published infra ports:
+
+```env
+KUVOX_QDRANT_HOST=localhost
+KUVOX_REDIS_URL=redis://localhost:6379/0
+KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@localhost:5672/
+KUVOX_S3_ENDPOINT_URL=http://localhost:8333
+KUVOX_MEDIA_WORK_DIR=/tmp/kuvox-media
+KUVOX_INGESTION_WORK_DIR=/tmp/kuvox-ingestion
+```
+
+Native macOS uses the same values as Linux:
+
+```env
+KUVOX_QDRANT_HOST=localhost
+KUVOX_REDIS_URL=redis://localhost:6379/0
+KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@localhost:5672/
+KUVOX_S3_ENDPOINT_URL=http://localhost:8333
+KUVOX_MEDIA_WORK_DIR=/tmp/kuvox-media
+KUVOX_INGESTION_WORK_DIR=/tmp/kuvox-ingestion
+```
+
+Native Windows with Docker-published infra ports:
+
+```env
+KUVOX_QDRANT_HOST=localhost
+KUVOX_REDIS_URL=redis://localhost:6379/0
+KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@localhost:5672/
+KUVOX_S3_ENDPOINT_URL=http://localhost:8333
+KUVOX_MEDIA_WORK_DIR=D:/Kuvox/.codex-tmp/kuvox-media
+KUVOX_INGESTION_WORK_DIR=D:/Kuvox/.codex-tmp/kuvox-ingestion
+```
+
+AI service running inside Docker Compose:
+
+```env
+KUVOX_QDRANT_HOST=qdrant
+KUVOX_REDIS_URL=redis://redis:6379/0
+KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@rabbitmq:5672/
+KUVOX_S3_ENDPOINT_URL=http://seaweedfs-s3:8333
+KUVOX_MEDIA_WORK_DIR=/tmp/kuvox-media
+KUVOX_INGESTION_WORK_DIR=/tmp/kuvox-ingestion
+```
+
+Do not use `/tmp/...` scratch paths for native Windows workers; use a writable
+drive path. If using Conda on Windows, start workers from an activated environment
+or ensure `Library/bin` and `Scripts` are on PATH so native tools such as `ffprobe`
+can be found. For production, inject secrets as real environment variables or via a
+secret manager rather than committing `.env` files.
+
 Then:
 
 - API docs: <http://localhost:8000/docs>
 - Health: <http://localhost:8000/health>
-- RabbitMQ UI: <http://localhost:15672> (guest / guest)
+- RabbitMQ UI: <http://localhost:15672> (kuvox / kuvox)
 - SeaweedFS console: <http://localhost:8333> 
 
 Run a worker in a separate shell:
@@ -53,12 +112,22 @@ Run a worker in a separate shell:
 .venv/bin/python -m kuvox_ai.workers.sandbox_worker
 ```
 
+The FastAPI server does not run RabbitMQ workers. Uploads stay in the API's
+`Uploaded`/optimizing state until `kuvox_ai.workers.media_optimization_worker`
+is running and consuming `media.optimization.requested`. Videos then move to
+`Processing` and require `kuvox_ai.workers.ingestion_worker` to reach `Ready`.
+
+Use the environment-specific paths and hostnames from the Environment Variables
+section above before starting workers.
+
 The media optimization worker consumes `media.optimization.requested` from the
 `kuvox.events` direct exchange, downloads raw media from SeaweedFS, writes
 canonical/proxy/thumbnail objects, and publishes `media.optimization.completed`
 or `media.optimization.failed`. These messages are media-library scoped and do not
 carry `projectId`; project/media association is handled by the API's Projects module.
-It requires `ffmpeg` and `ffprobe` on PATH.
+Optimization downloads stream objects directly to the local job directory to avoid
+Windows S3 temp-file rename failures. Image metadata is read with Pillow after
+conversion; video/audio metadata still comes from FFprobe.
 
 ## Module map
 

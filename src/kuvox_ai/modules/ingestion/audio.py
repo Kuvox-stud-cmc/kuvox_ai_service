@@ -7,8 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from kuvox_ai.logging import get_logger
 from kuvox_ai.modules.ingestion.models import DetectedShot
 from kuvox_ai.modules.media_optimization import ffmpeg
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +38,16 @@ class AudioExtractor(Protocol):
 
 class FFmpegAudioExtractor:
     async def has_audio_stream(self, video_path: Path) -> bool:
-        metadata = await ffmpeg.ffprobe_json(video_path)
+        try:
+            metadata = await ffmpeg.ffprobe_json(video_path)
+        except ffmpeg.FfmpegError as exc:
+            logger.warning(
+                "ingestion.audio_probe_failed",
+                path=str(video_path),
+                error=str(exc),
+            )
+            return False
+
         streams = metadata.get("streams")
         if not isinstance(streams, list):
             return False

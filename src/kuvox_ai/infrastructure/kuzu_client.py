@@ -65,9 +65,19 @@ class KuzuClient:
     async def health_check(self) -> bool:
         try:
             if self._conn is None:
-                return False
+                return await asyncio.to_thread(self._probe_database)
             await self.execute("RETURN 1")
             return True
         except Exception as exc:  # noqa: BLE001 — health check must never raise
+            if self._conn is None and "Could not set lock on file" in str(exc):
+                logger.info("kuzu.health_check_lock_held", path=str(self._db_path))
+                return True
             logger.warning("kuzu.health_check_failed", error=str(exc))
             return False
+
+    def _probe_database(self) -> bool:
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        db = kuzu.Database(str(self._db_path))
+        conn = kuzu.Connection(db)
+        result = conn.execute("RETURN 1")
+        return result is not None

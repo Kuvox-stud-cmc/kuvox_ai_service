@@ -72,6 +72,10 @@ async def test_extract_frame_calls_ffmpeg(
         return Process()
 
     monkeypatch.setattr(
+        "kuvox_ai.modules.ingestion.frame_sampler.resolve_ffmpeg_exe",
+        lambda: "resolved-ffmpeg",
+    )
+    monkeypatch.setattr(
         "kuvox_ai.modules.ingestion.frame_sampler.asyncio.create_subprocess_exec",
         fake_create_subprocess_exec,
     )
@@ -80,7 +84,7 @@ async def test_extract_frame_calls_ffmpeg(
     await frame_sampler_module.extract_frame(tmp_path / "video.mp4", 3.25, output_path)
 
     assert command == (
-        "ffmpeg",
+        "resolved-ffmpeg",
         "-hide_banner",
         "-loglevel",
         "error",
