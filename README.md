@@ -9,7 +9,8 @@ data side only and trusts its caller for authentication.
 
 ## Prerequisites
 
-- Python **3.11+** (3.12 recommended; the Docker image pins 3.12-slim).
+- Python **3.11 or 3.12** (3.12 recommended; the Docker image pins 3.12-slim).
+  The ML ingestion dependencies are not declared for newer Python versions yet.
 - Docker + Docker Compose (for local Qdrant / Redis / RabbitMQ / SeaweedFS).
 - `make`. On Windows install via Chocolatey (`choco install make`) or run the
   underlying commands directly — every target is a one-liner you can paste.
@@ -22,6 +23,19 @@ make install      # create .venv, install deps incl. dev extras
 make up           # start local infra via docker-compose
 make dev          # start FastAPI with auto-reload on http://localhost:8000
 ```
+
+For Conda, create the environment with a supported Python first, then install
+from the AI service directory:
+
+```bash
+conda create -n kuvox-ai python=3.12
+conda activate kuvox-ai
+python -m pip install -e ".[dev]"
+```
+
+`msclap` currently requires NumPy 1.x and `librosa<0.11`, so the project pins
+those ranges in `pyproject.toml`. Use a fresh Python 3.11/3.12 environment if
+pip reports that no matching NumPy or librosa distributions are available.
 
 Then:
 
