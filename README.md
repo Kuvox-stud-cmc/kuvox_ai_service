@@ -9,7 +9,7 @@ data side only and trusts its caller for authentication.
 
 ## Prerequisites
 
-- Python **3.11+** (3.12 recommended; the Docker image pins 3.12-slim).
+- Python **3.11 or 3.12** (3.12 recommended; the Docker image pins 3.12-slim).
 - Docker + Docker Compose (for local Qdrant / Redis / RabbitMQ / SeaweedFS).
 - `make`. On Windows install via Chocolatey (`choco install make`) or run the
   underlying commands directly — every target is a one-liner you can paste.
