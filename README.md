@@ -10,7 +10,7 @@ data side only and trusts its caller for authentication.
 ## Prerequisites
 
 - Python **3.11 or 3.12** (3.12 recommended; the Docker image pins 3.12-slim).
-  The ML ingestion dependencies are not declared for newer Python versions yet.
+- The ML ingestion dependencies are not declared for newer Python versions yet.
 - Docker + Docker Compose (for local Qdrant / Redis / RabbitMQ / SeaweedFS).
 - FFmpeg tooling for media pipelines. Image optimization can use the bundled
   `imageio-ffmpeg` binary, but video/audio optimization and ingestion still need

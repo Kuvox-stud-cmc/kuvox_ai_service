@@ -49,7 +49,15 @@ def _build_state(settings: Settings) -> AppState:
     storage = ObjectStorageClient.from_settings(settings)
     llm = build_llm_client(settings)
 
-    retrieval = RetrievalService(kuzu=kuzu, qdrant=qdrant)
+    retrieval = RetrievalService(
+        kuzu=kuzu,
+        qdrant=qdrant,
+        transcript_collection_name=settings.transcript_collection_name,
+        ocr_collection_name=settings.ocr_collection_name,
+        text_embedding_model_name=settings.text_embedding_model_name,
+        text_embedding_device=settings.text_embedding_device,
+        text_embedding_batch_size=settings.text_embedding_batch_size,
+    )
     media_optimization = MediaOptimizationService(
         storage=storage,
         canonical_bucket=settings.s3_canonical_bucket,

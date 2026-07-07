@@ -11,6 +11,7 @@ from kuvox_ai.schemas.operation import (
     TrimOperation,
 )
 from kuvox_ai.schemas.plan import Plan
+from kuvox_ai.schemas.render_manifest import VideoRenderManifest
 from kuvox_ai.schemas.retrieval import RetrievalResult, ScoredShot
 from kuvox_ai.schemas.shot import Shot
 from kuvox_ai.schemas.video import Video
@@ -25,4 +26,5 @@ __all__ = [
     "TransitionOperation",
     "TrimOperation",
     "Video",
+    "VideoRenderManifest",
 ]

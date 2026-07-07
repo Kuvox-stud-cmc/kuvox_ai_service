@@ -25,8 +25,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         request_id = request.headers.get("x-request-id") or uuid4().hex
+        editor_correlation_id = request.headers.get("x-kuvox-editor-correlation-id") or request_id
         structlog.contextvars.bind_contextvars(
             request_id=request_id,
+            editor_correlation_id=editor_correlation_id,
             method=request.method,
             path=request.url.path,
         )
@@ -36,6 +38,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             status_code = response.status_code
             response.headers["x-request-id"] = request_id
+            response.headers["x-kuvox-editor-correlation-id"] = editor_correlation_id
             return response
         finally:
             duration_ms = (time.perf_counter() - start) * 1000
