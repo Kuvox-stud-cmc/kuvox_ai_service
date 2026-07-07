@@ -36,7 +36,7 @@ def _detect_video_shots_sync(
     path: Path, media_id: str, duration_seconds: float
 ) -> list[DetectedShot]:
     try:
-        from scenedetect import ContentDetector, detect  # type: ignore[import-not-found]
+        from scenedetect import ContentDetector, detect  # type: ignore[import-untyped]
 
         scenes = detect(str(path), ContentDetector())
         shots = [

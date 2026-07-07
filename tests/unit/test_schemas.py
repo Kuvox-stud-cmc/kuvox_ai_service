@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 
+from kuvox_ai.modules.retrieval.models import VideoEditorRetrievalResult, VideoEditorShotResult
 from kuvox_ai.schemas import (
     ConcatenateOperation,
     Plan,
@@ -60,3 +61,26 @@ def test_retrieval_result_defaults() -> None:
         ],
     )
     assert r2.shots[0].score == 0.9
+
+
+def test_video_editor_retrieval_result_uses_string_ingestion_ids() -> None:
+    result = VideoEditorRetrievalResult(
+        projectId="project-1",
+        query="speaker",
+        results=[
+            VideoEditorShotResult(
+                shotId="media-1:shot:000001",
+                mediaId="media-1",
+                startSeconds=1.0,
+                endSeconds=4.0,
+                score=0.5,
+                modalityScores={"transcript": 0.9},
+                nextShotId="media-1:shot:000002",
+            )
+        ],
+    )
+
+    dumped = result.model_dump(by_alias=True)
+    assert dumped["results"][0]["shotId"] == "media-1:shot:000001"
+    reparsed = VideoEditorRetrievalResult.model_validate(dumped)
+    assert reparsed.results[0].media_id == "media-1"

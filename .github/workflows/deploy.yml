@@ -57,13 +57,104 @@ jobs:
             ${{ steps.img.outputs.name }}:${{ steps.tag.outputs.tag }}
             ${{ steps.img.outputs.name }}:${{ github.sha }}
 
-      - name: Copy compose file to Droplet
+      - name: Generate SeaweedFS S3 config
+        env:
+          SEAWEEDFS_RAW_BUCKET: ${{ vars.SEAWEEDFS_RAW_BUCKET }}
+          SEAWEEDFS_CANONICAL_BUCKET: ${{ vars.SEAWEEDFS_CANONICAL_BUCKET }}
+          SEAWEEDFS_PROXY_BUCKET: ${{ vars.SEAWEEDFS_PROXY_BUCKET }}
+          SEAWEEDFS_THUMBNAILS_BUCKET: ${{ vars.SEAWEEDFS_THUMBNAILS_BUCKET }}
+          SEAWEEDFS_TEMP_BUCKET: ${{ vars.SEAWEEDFS_TEMP_BUCKET }}
+          SEAWEEDFS_API_ACCESS_KEY: ${{ vars.SEAWEEDFS_API_ACCESS_KEY }}
+          SEAWEEDFS_API_SECRET_KEY: ${{ secrets.SEAWEEDFS_API_SECRET_KEY }}
+          SEAWEEDFS_AI_ACCESS_KEY: ${{ vars.SEAWEEDFS_AI_ACCESS_KEY }}
+          SEAWEEDFS_AI_SECRET_KEY: ${{ secrets.SEAWEEDFS_AI_SECRET_KEY }}
+          SEAWEEDFS_BOOTSTRAP_ACCESS_KEY: ${{ vars.SEAWEEDFS_BOOTSTRAP_ACCESS_KEY }}
+          SEAWEEDFS_BOOTSTRAP_SECRET_KEY: ${{ secrets.SEAWEEDFS_BOOTSTRAP_SECRET_KEY }}
+        run: |
+          mkdir -p infra/seaweedfs
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          def optional(name: str, default: str) -> str:
+              return os.environ.get(name) or default
+
+          def required(name: str) -> str:
+              value = os.environ.get(name)
+              if not value:
+                  raise SystemExit(f"Missing required secret or variable: {name}")
+              return value
+
+          raw_bucket = optional("SEAWEEDFS_RAW_BUCKET", "kuvox-raw")
+          canonical_bucket = optional("SEAWEEDFS_CANONICAL_BUCKET", "kuvox-canonical")
+          proxy_bucket = optional("SEAWEEDFS_PROXY_BUCKET", "kuvox-proxy")
+          thumbnails_bucket = optional("SEAWEEDFS_THUMBNAILS_BUCKET", "kuvox-thumbnails")
+          temp_bucket = optional("SEAWEEDFS_TEMP_BUCKET", "kuvox-temp")
+
+          def list_read_write(bucket: str) -> list[str]:
+              return [f"List:{bucket}", f"Read:{bucket}/*", f"Write:{bucket}/*"]
+
+          def list_read(bucket: str) -> list[str]:
+              return [f"List:{bucket}", f"Read:{bucket}/*"]
+
+          config = {
+              "identities": [
+                  {
+                      "name": "kuvox-api",
+                      "credentials": [
+                          {
+                              "accessKey": optional("SEAWEEDFS_API_ACCESS_KEY", "kuvox-api"),
+                              "secretKey": required("SEAWEEDFS_API_SECRET_KEY"),
+                          }
+                      ],
+                      "actions": (
+                          list_read_write(raw_bucket)
+                          + list_read_write(canonical_bucket)
+                          + list_read_write(proxy_bucket)
+                          + list_read_write(thumbnails_bucket)
+                      ),
+                  },
+                  {
+                      "name": "kuvox-ai",
+                      "credentials": [
+                          {
+                              "accessKey": optional("SEAWEEDFS_AI_ACCESS_KEY", "kuvox-ai"),
+                              "secretKey": required("SEAWEEDFS_AI_SECRET_KEY"),
+                          }
+                      ],
+                      "actions": (
+                          list_read(raw_bucket)
+                          + list_read_write(canonical_bucket)
+                          + list_read_write(proxy_bucket)
+                          + list_read_write(thumbnails_bucket)
+                          + list_read_write(temp_bucket)
+                      ),
+                  },
+                  {
+                      "name": "kuvox-bootstrap",
+                      "credentials": [
+                          {
+                              "accessKey": optional("SEAWEEDFS_BOOTSTRAP_ACCESS_KEY", "kuvox-bootstrap"),
+                              "secretKey": required("SEAWEEDFS_BOOTSTRAP_SECRET_KEY"),
+                          }
+                      ],
+                      "actions": ["Admin", "List", "Read", "Write"],
+                  },
+              ]
+          }
+
+          path = pathlib.Path("infra/seaweedfs/s3.json")
+          path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Copy deployment files to Droplet
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ vars.DROPLET_HOST }}
           username: ${{ vars.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
-          source: docker-compose.prod.yml
+          source: docker-compose.prod.yml,infra/seaweedfs/s3.json
           target: /opt/kuvox
 
       - name: Deploy to Droplet

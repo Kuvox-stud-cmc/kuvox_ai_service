@@ -4,6 +4,28 @@
 
 services:
   # ---- Application services ---------------------------------------------------
+  kuvox-frontend:
+    image: ghcr.io/${GITHUB_OWNER}/kuvox-frontend:${FRONTEND_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      # Bound to localhost only — the host Nginx reverse proxy fronts it with TLS.
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      VITE_API_URL: ${VITE_API_URL:-http://kuvox-api:5000}
+      API_URL: ${API_URL:-http://kuvox-api:5000}
+      VITE_AI_SERVICE_URL: ${VITE_AI_SERVICE_URL:-http://kuvox-ai:8000}
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://kuvox-ai:8000}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+    depends_on:
+      - kuvox-api
+      - kuvox-ai
+    networks:
+      - kuvox
+
   kuvox-api:
     image: ghcr.io/${GITHUB_OWNER}/kuvox-api:${API_TAG:-latest}
     restart: unless-stopped
@@ -148,7 +170,9 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8333:8333"    # S3-compatible API endpoint
-    command: s3 -filer=seaweedfs-filer:8888
+    command: s3 -config=/etc/seaweedfs/s3.json -filer=seaweedfs-filer:8888
+    volumes:
+      - ./infra/seaweedfs:/etc/seaweedfs:ro
     depends_on:
       - seaweedfs-filer
     networks:
