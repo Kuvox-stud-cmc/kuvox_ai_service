@@ -104,6 +104,8 @@ def _build_state(settings: Settings) -> AppState:
             clip_pretrained=settings.clip_pretrained,
             clip_device=settings.clip_device,
             clip_batch_size=settings.clip_batch_size,
+            visual_index_timeout_seconds=settings.visual_index_timeout_seconds,
+            optional_index_timeout_seconds=settings.optional_index_timeout_seconds,
         ),
         media_optimization=media_optimization,
         retrieval=retrieval,
@@ -121,8 +123,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("app.starting", environment=settings.environment)
 
     state = _build_state(settings)
-    # Connect in dependency order; failures here abort startup.
-    await state.kuzu.connect()
+    # Kuzu uses an exclusive embedded-database lock. Ingestion workers own the
+    # write connection; the API opens it lazily when graph reads are implemented.
     await state.qdrant.connect()
     await state.redis.connect()
     await state.rabbitmq.connect()

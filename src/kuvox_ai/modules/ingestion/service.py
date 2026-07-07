@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -90,11 +91,15 @@ class IngestionService:
         clip_pretrained: str = "laion2b_s34b_b79k",
         clip_device: str = "auto",
         clip_batch_size: int = 16,
+        visual_index_timeout_seconds: int = 60,
+        optional_index_timeout_seconds: int = 60,
     ) -> None:
         self._kuzu = kuzu
         self._storage = storage
         self._work_dir = work_dir
         self._qdrant = qdrant
+        self._visual_index_timeout_seconds = visual_index_timeout_seconds
+        self._optional_index_timeout_seconds = optional_index_timeout_seconds
         self._writer = writer or KuzuIngestionWriter(kuzu)
         self._frame_sampler = frame_sampler or FFmpegFrameSampler()
         self._visual_encoder = visual_encoder or ClipVisualEncoder(
@@ -177,6 +182,7 @@ class IngestionService:
                 request.canonical.object_key,
                 canonical_path,
             )
+            logger.info("ingestion.ingest.downloaded", media_id=request.media_id)
 
             metadata = merge_metadata(
                 request_metadata=VideoMetadata(
@@ -188,26 +194,31 @@ class IngestionService:
                 ),
                 probed_metadata=await probe_video_metadata(canonical_path),
             )
+            logger.info("ingestion.ingest.metadata_ready", media_id=request.media_id)
             shots = await detect_video_shots(
                 canonical_path,
                 media_id=request.media_id,
                 duration_seconds=metadata.duration_seconds or 0.0,
             )
+            logger.info(
+                "ingestion.ingest.shots_detected",
+                media_id=request.media_id,
+                shot_count=len(shots),
+            )
             await self._writer.write_video_with_shots(request, metadata, shots)
+            logger.info("ingestion.ingest.graph_written", media_id=request.media_id)
             frames = await self._frame_sampler.sample_frames(
                 canonical_path,
                 shots,
                 job_dir / "frames",
             )
-            embeddings = await self._visual_encoder.encode_frames(frames)
-            await self._visual_writer.write_shot_vectors(request, frames, embeddings)
-            await self._index_transcript_audio_ocr(
-                request=request,
-                canonical_path=canonical_path,
-                shots=shots,
-                frames=frames,
-                job_dir=job_dir,
+            logger.info(
+                "ingestion.ingest.frames_sampled",
+                media_id=request.media_id,
+                frame_count=len(frames),
             )
+            await self._index_visual_best_effort(request, frames)
+            await self._index_optional_best_effort(request, canonical_path, shots, frames, job_dir)
 
         logger.info("ingestion.ingest.completed", media_id=request.media_id, shot_count=len(shots))
         return IngestionCompleted(
@@ -217,6 +228,72 @@ class IngestionService:
             media_id=request.media_id,
             shot_count=len(shots),
         )
+
+    async def _index_visual_best_effort(
+        self,
+        request: IngestionRequested,
+        frames: list[SampledFrame],
+    ) -> None:
+        assert self._visual_writer is not None
+        try:
+            await asyncio.wait_for(
+                self._index_visual(request, frames),
+                timeout=self._visual_index_timeout_seconds,
+            )
+        except TimeoutError:
+            logger.warning(
+                "ingestion.ingest.visual_index_timeout",
+                media_id=request.media_id,
+                timeout_seconds=self._visual_index_timeout_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingestion.ingest.visual_index_failed",
+                media_id=request.media_id,
+                error=str(exc),
+            )
+
+    async def _index_visual(
+        self,
+        request: IngestionRequested,
+        frames: list[SampledFrame],
+    ) -> None:
+        assert self._visual_writer is not None
+        embeddings = await self._visual_encoder.encode_frames(frames)
+        await self._visual_writer.write_shot_vectors(request, frames, embeddings)
+        logger.info("ingestion.ingest.visual_indexed", media_id=request.media_id)
+
+    async def _index_optional_best_effort(
+        self,
+        request: IngestionRequested,
+        canonical_path: Path,
+        shots: list[DetectedShot],
+        frames: list[SampledFrame],
+        job_dir: Path,
+    ) -> None:
+        try:
+            await asyncio.wait_for(
+                self._index_transcript_audio_ocr(
+                    request=request,
+                    canonical_path=canonical_path,
+                    shots=shots,
+                    frames=frames,
+                    job_dir=job_dir,
+                ),
+                timeout=self._optional_index_timeout_seconds,
+            )
+        except TimeoutError:
+            logger.warning(
+                "ingestion.ingest.optional_index_timeout",
+                media_id=request.media_id,
+                timeout_seconds=self._optional_index_timeout_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingestion.ingest.optional_index_failed",
+                media_id=request.media_id,
+                error=str(exc),
+            )
 
     async def _index_transcript_audio_ocr(
         self,
@@ -231,6 +308,7 @@ class IngestionService:
         assert self._audio_writer is not None
         assert self._ocr_writer is not None
 
+        logger.info("ingestion.ingest.optional_indexing_start", media_id=request.media_id)
         has_audio = await self._audio_extractor.has_audio_stream(canonical_path)
         if has_audio:
             full_audio_path = await self._audio_extractor.extract_full_audio(
@@ -277,6 +355,7 @@ class IngestionService:
             request,
             ocr_points(request, shot_ocr_texts, ocr_embeddings),
         )
+        logger.info("ingestion.ingest.optional_indexing_completed", media_id=request.media_id)
 
 
 def build_embedding_writer(

@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from kuvox_ai.infrastructure.object_storage_client import ObjectStorageClient
+from kuvox_ai.logging import get_logger
 from kuvox_ai.modules.media_optimization import ffmpeg
 from kuvox_ai.modules.media_optimization.models import (
     MediaKind,
@@ -19,6 +20,8 @@ from kuvox_ai.modules.media_optimization.models import (
     MediaOptimizationRequested,
     OptimizedObject,
 )
+
+logger = get_logger(__name__)
 
 
 class MediaOptimizationService:
@@ -85,7 +88,7 @@ class MediaOptimizationService:
                 "-map_metadata",
                 "-1",
                 "-c:v",
-                "libx265",
+                "libx264",
                 "-crf",
                 str(self._video_canonical_crf),
                 "-preset",
@@ -94,12 +97,14 @@ class MediaOptimizationService:
                 "aac",
                 "-b:a",
                 "96k",
+                "-pix_fmt",
+                "yuv420p",
                 "-movflags",
                 "+faststart",
                 str(canonical_path),
             ]
         )
-        await ffmpeg.run_command(
+        await run_optional_command(
             [
                 "ffmpeg",
                 "-y",
@@ -117,17 +122,19 @@ class MediaOptimizationService:
                 "aac",
                 "-b:a",
                 "64k",
+                "-pix_fmt",
+                "yuv420p",
                 "-movflags",
                 "+faststart",
                 str(proxy_path),
             ]
         )
-        await ffmpeg.run_command(
+        await run_optional_command(
             [
                 "ffmpeg",
                 "-y",
                 "-ss",
-                "00:00:03",
+                "00:00:00.1",
                 "-i",
                 str(input_path),
                 "-frames:v",
@@ -149,19 +156,19 @@ class MediaOptimizationService:
             f"{base_key}/canonical.mp4",
             "video/mp4",
         )
-        proxy = await self._upload_optimized(
+        proxy = await self._upload_optional_optimized(
             proxy_path,
             self._proxy_bucket,
             f"{base_key}/proxy.mp4",
             "video/mp4",
         )
-        thumbnail = await self._upload_optimized(
+        thumbnail = await self._upload_optional_optimized(
             poster_path,
             self._thumbnail_bucket,
             f"{base_key}/poster.webp",
             "image/webp",
         )
-        metadata = extract_basic_metadata(await ffmpeg.ffprobe_json(canonical_path))
+        metadata = await extract_basic_metadata_safely(canonical_path)
 
         return self._completed(
             request,
@@ -178,6 +185,7 @@ class MediaOptimizationService:
         job_dir: Path,
     ) -> MediaOptimizationCompleted:
         canonical_path = job_dir / "canonical.opus"
+        waveform_path = job_dir / "waveform.webp"
         await ffmpeg.run_command(
             [
                 "ffmpeg",
@@ -193,15 +201,44 @@ class MediaOptimizationService:
                 str(canonical_path),
             ]
         )
+        await run_optional_command(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(input_path),
+                "-filter_complex",
+                "showwavespic=s=640x240:colors=0x4f46e5",
+                "-frames:v",
+                "1",
+                "-c:v",
+                "libwebp",
+                "-quality",
+                "80",
+                str(waveform_path),
+            ]
+        )
 
+        base_key = output_base_key(request)
         canonical = await self._upload_optimized(
             canonical_path,
             self._canonical_bucket,
-            f"{output_base_key(request)}/canonical.opus",
+            f"{base_key}/canonical.opus",
             "audio/opus",
         )
-        metadata = extract_basic_metadata(await ffmpeg.ffprobe_json(canonical_path))
-        return self._completed(request, canonical=canonical, metadata=metadata)
+        thumbnail = await self._upload_optional_optimized(
+            waveform_path,
+            self._thumbnail_bucket,
+            f"{base_key}/waveform.webp",
+            "image/webp",
+        )
+        metadata = await extract_basic_metadata_safely(canonical_path)
+        return self._completed(
+            request,
+            canonical=canonical,
+            thumbnail=thumbnail,
+            metadata=metadata,
+        )
 
     async def _optimize_image(
         self,
@@ -260,7 +297,7 @@ class MediaOptimizationService:
             f"{base_key}/thumb.webp",
             "image/webp",
         )
-        metadata = extract_basic_metadata(await ffmpeg.ffprobe_json(canonical_path))
+        metadata = image_metadata(canonical_path)
         return self._completed(
             request,
             canonical=canonical,
@@ -283,6 +320,27 @@ class MediaOptimizationService:
             content_type=content_type,
             size_bytes=stat.st_size,
         )
+
+    async def _upload_optional_optimized(
+        self,
+        source: Path,
+        bucket: str,
+        key: str,
+        content_type: str,
+    ) -> OptimizedObject | None:
+        if not await asyncio.to_thread(source.exists):
+            return None
+
+        try:
+            return await self._upload_optimized(source, bucket, key, content_type=content_type)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "media_optimization.optional_upload_failed",
+                bucket=bucket,
+                key=key,
+                error=str(exc),
+            )
+            return None
 
     def _completed(
         self,
@@ -331,6 +389,31 @@ def output_base_key(request: MediaOptimizationRequested) -> str:
     return f"media/{request.media_id}"
 
 
+async def run_optional_command(args: list[str]) -> bool:
+    try:
+        await ffmpeg.run_command(args)
+        return True
+    except ffmpeg.FfmpegError as exc:
+        logger.warning(
+            "media_optimization.optional_ffmpeg_failed",
+            output=args[-1] if args else None,
+            error=str(exc),
+        )
+        return False
+
+
+async def extract_basic_metadata_safely(path: Path) -> dict[str, Any]:
+    try:
+        return extract_basic_metadata(await ffmpeg.ffprobe_json(path))
+    except ffmpeg.FfmpegError as exc:
+        logger.warning(
+            "media_optimization.ffprobe_failed",
+            path=str(path),
+            error=str(exc),
+        )
+        return {}
+
+
 def extract_basic_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     streams = metadata.get("streams", [])
     if not isinstance(streams, list):
@@ -363,6 +446,21 @@ def extract_basic_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         }
 
     return {}
+
+
+def image_metadata(path: Path) -> dict[str, Any]:
+    try:
+        from PIL import Image
+    except ImportError:
+        return {}
+
+    with Image.open(path) as image:
+        width, height = image.size
+
+    return {
+        "width": width,
+        "height": height,
+    }
 
 
 def _parse_frame_rate(value: object) -> float | None:

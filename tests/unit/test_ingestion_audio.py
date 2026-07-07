@@ -6,6 +6,7 @@ import pytest
 
 from kuvox_ai.modules.ingestion.audio import FFmpegAudioExtractor
 from kuvox_ai.modules.ingestion.models import DetectedShot
+from kuvox_ai.modules.media_optimization import ffmpeg
 
 
 def shot() -> DetectedShot:
@@ -39,6 +40,21 @@ async def test_has_audio_stream_returns_false_without_audio(
 ) -> None:
     async def fake_ffprobe_json(path: Path) -> dict[str, object]:
         return {"streams": [{"codec_type": "video"}]}
+
+    monkeypatch.setattr(
+        "kuvox_ai.modules.ingestion.audio.ffmpeg.ffprobe_json",
+        fake_ffprobe_json,
+    )
+
+    assert await FFmpegAudioExtractor().has_audio_stream(tmp_path / "video.mp4") is False
+
+
+async def test_has_audio_stream_returns_false_when_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    async def fake_ffprobe_json(path: Path) -> dict[str, object]:
+        raise ffmpeg.FfmpegError("ffprobe missing")
 
     monkeypatch.setattr(
         "kuvox_ai.modules.ingestion.audio.ffmpeg.ffprobe_json",

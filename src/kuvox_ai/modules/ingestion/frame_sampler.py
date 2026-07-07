@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from kuvox_ai.modules.ingestion.models import DetectedShot
+from kuvox_ai.modules.media_optimization.ffmpeg import resolve_ffmpeg_exe
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +56,7 @@ def midpoint_seconds(shot: DetectedShot) -> float:
 
 async def extract_frame(video_path: Path, timestamp_seconds: float, output_path: Path) -> None:
     process = await asyncio.create_subprocess_exec(
-        "ffmpeg",
+        resolve_ffmpeg_exe(),
         "-hide_banner",
         "-loglevel",
         "error",

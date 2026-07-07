@@ -76,7 +76,7 @@ async def handle_message_body(
             source_event_id=request.event_id,
             media_id=request.media_id,
             error_code=exc.__class__.__name__,
-            error_message=str(exc),
+            error_message=str(exc) or exc.__class__.__name__,
         )
         await rabbitmq.publish_json(
             failed_routing_key,

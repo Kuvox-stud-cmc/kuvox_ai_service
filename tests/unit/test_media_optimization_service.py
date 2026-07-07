@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kuvox_ai.modules.media_optimization import ffmpeg
+from kuvox_ai.modules.media_optimization import service as media_optimization_service
 from kuvox_ai.modules.media_optimization.models import MediaOptimizationRequested
 from kuvox_ai.modules.media_optimization.service import MediaOptimizationService
 
@@ -85,7 +86,10 @@ async def fake_ffprobe_json(_path: Path) -> dict[str, Any]:
             "Audio",
             "demo.wav",
             "audio/wav",
-            [("kuvox-canonical", "media/media-1/canonical.opus", "audio/opus")],
+            [
+                ("kuvox-canonical", "media/media-1/canonical.opus", "audio/opus"),
+                ("kuvox-thumbnails", "media/media-1/waveform.webp", "image/webp"),
+            ],
         ),
         (
             "Image",
@@ -114,6 +118,11 @@ async def test_service_uploads_deterministic_outputs(
     mock_storage.download_file.side_effect = fake_download_file
     monkeypatch.setattr(ffmpeg, "run_command", fake_run_command)
     monkeypatch.setattr(ffmpeg, "ffprobe_json", fake_ffprobe_json)
+    monkeypatch.setattr(
+        media_optimization_service,
+        "image_metadata",
+        lambda _path: {"width": 320, "height": 180},
+    )
 
     result = await make_service(mock_storage, tmp_path).optimize(
         make_request(kind, filename=filename, content_type=content_type)
@@ -143,3 +152,87 @@ async def test_ffmpeg_failure_cleans_temp_files(
         await make_service(mock_storage, tmp_path).optimize(
             make_request("Video", filename="demo.mp4", content_type="video/mp4")
         )
+
+
+@pytest.mark.parametrize(
+    ("kind", "filename", "content_type"),
+    [
+        ("Video", "demo.mp4", "video/mp4"),
+        ("Audio", "demo.wav", "audio/wav"),
+    ],
+)
+async def test_probe_failure_does_not_block_canonical_completion(
+    kind: str,
+    filename: str,
+    content_type: str,
+    tmp_path: Path,
+    mock_storage: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_ffprobe(_path: Path) -> dict[str, Any]:
+        raise ffmpeg.FfmpegError("ffprobe missing")
+
+    mock_storage.download_file.side_effect = fake_download_file
+    monkeypatch.setattr(ffmpeg, "run_command", fake_run_command)
+    monkeypatch.setattr(ffmpeg, "ffprobe_json", fail_ffprobe)
+
+    result = await make_service(mock_storage, tmp_path).optimize(
+        make_request(kind, filename=filename, content_type=content_type)
+    )
+
+    assert result.canonical is not None
+    assert result.duration_seconds is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "filename", "content_type", "canonical_name", "expected_upload"),
+    [
+        (
+            "Video",
+            "demo.mp4",
+            "video/mp4",
+            "canonical.mp4",
+            ("kuvox-canonical", "media/media-1/canonical.mp4", "video/mp4"),
+        ),
+        (
+            "Audio",
+            "demo.wav",
+            "audio/wav",
+            "canonical.opus",
+            ("kuvox-canonical", "media/media-1/canonical.opus", "audio/opus"),
+        ),
+    ],
+)
+async def test_optional_preview_failure_does_not_block_canonical_completion(
+    kind: str,
+    filename: str,
+    content_type: str,
+    canonical_name: str,
+    expected_upload: tuple[str, str, str],
+    tmp_path: Path,
+    mock_storage: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_optional_outputs(args: list[str], timeout_seconds: int = 900) -> None:
+        del timeout_seconds
+        output_path = Path(args[-1])
+        if output_path.name != canonical_name:
+            raise ffmpeg.FfmpegError("optional preview failed")
+        await asyncio.to_thread(output_path.write_bytes, b"optimized")
+
+    mock_storage.download_file.side_effect = fake_download_file
+    monkeypatch.setattr(ffmpeg, "run_command", fail_optional_outputs)
+    monkeypatch.setattr(ffmpeg, "ffprobe_json", fake_ffprobe_json)
+
+    result = await make_service(mock_storage, tmp_path).optimize(
+        make_request(kind, filename=filename, content_type=content_type)
+    )
+
+    actual_uploads = [
+        (call.args[1], call.args[2], call.kwargs["content_type"])
+        for call in mock_storage.upload_file.call_args_list
+    ]
+    assert actual_uploads == [expected_upload]
+    assert result.canonical is not None
+    assert result.proxy is None
+    assert result.thumbnail is None

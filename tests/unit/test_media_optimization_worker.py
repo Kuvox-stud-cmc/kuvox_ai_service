@@ -75,6 +75,25 @@ async def test_worker_publishes_failed_on_service_error(
     assert "projectId" not in mock_rabbitmq.publish_json.await_args.args[1]
 
 
+async def test_worker_failed_message_falls_back_to_error_code(
+    mock_rabbitmq: AsyncMock,
+) -> None:
+    service = AsyncMock()
+    service.optimize.side_effect = RuntimeError()
+
+    await handle_message_body(
+        requested_body(),
+        service=service,
+        rabbitmq=mock_rabbitmq,
+        completed_routing_key="media.optimization.completed",
+        failed_routing_key="media.optimization.failed",
+    )
+
+    payload = mock_rabbitmq.publish_json.await_args.args[1]
+    assert payload["errorCode"] == "RuntimeError"
+    assert payload["errorMessage"] == "RuntimeError"
+
+
 async def test_worker_schedules_retry_before_terminal_failure(
     mock_rabbitmq: AsyncMock,
 ) -> None:
