@@ -93,8 +93,10 @@ class PlanningService:
             return _split_plan(request, "", playhead)
 
         if add_text := re.fullmatch(r'add\s+text\s+"([^"]+)"(?:\s+at\s+(.+))?', command, re.I):
-            time = _parse_time(add_text.group(2)) if add_text.group(2) else (
-                request.playback.current_time if request.playback else request.playhead_time
+            time = (
+                _parse_time(add_text.group(2))
+                if add_text.group(2)
+                else (request.playback.current_time if request.playback else request.playhead_time)
             )
             if time is None:
                 return _unsupported(request, "Use a valid text start time, such as 4s.")
@@ -104,7 +106,9 @@ class PlanningService:
                 explanation=f"Added text at {_format_seconds(time)}.",
             )
 
-        if trim_range := re.fullmatch(r"trim(?:\s+(.+?))?\s+from\s+(.+?)\s+to\s+(.+)", command, re.I):
+        if trim_range := re.fullmatch(
+            r"trim(?:\s+(.+?))?\s+from\s+(.+?)\s+to\s+(.+)", command, re.I
+        ):
             start = _parse_time(trim_range.group(2))
             end = _parse_time(trim_range.group(3))
             if start is None or end is None:
@@ -140,7 +144,9 @@ class PlanningService:
                 return _unsupported(request, "Use a valid move time, such as 18s.")
             return _move_plan(request, move.group(1) or "", time)
 
-        if volume := re.fullmatch(r"set\s+volume(?:\s+(.+?))?\s+to\s+(\d+(?:\.\d+)?)\s*%", command, re.I):
+        if volume := re.fullmatch(
+            r"set\s+volume(?:\s+(.+?))?\s+to\s+(\d+(?:\.\d+)?)\s*%", command, re.I
+        ):
             percent = float(volume.group(2))
             if percent < 0 or percent > 100:
                 return _unsupported(request, "Volume must be between 0% and 100%.")
@@ -149,11 +155,17 @@ class PlanningService:
                 return _unsupported(request, target)
             return _success(
                 request,
-                actions=[UpdateAudioAction(item_id=target.item.id, volume=_round_time(percent / 100), muted=False)],
+                actions=[
+                    UpdateAudioAction(
+                        item_id=target.item.id, volume=_round_time(percent / 100), muted=False
+                    )
+                ],
                 explanation=f"Set {target.item.id} volume to {percent:g}%.",
             )
 
-        if speed := re.fullmatch(r"change\s+speed(?:\s+(.+?))?\s+to\s+(\d+(?:\.\d+)?)\s*x", command, re.I):
+        if speed := re.fullmatch(
+            r"change\s+speed(?:\s+(.+?))?\s+to\s+(\d+(?:\.\d+)?)\s*x", command, re.I
+        ):
             rate = float(speed.group(2))
             if rate <= 0:
                 return _unsupported(request, "Speed must be greater than 0x.")

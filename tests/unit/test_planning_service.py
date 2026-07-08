@@ -50,7 +50,10 @@ async def test_video_editor_planning_handles_concrete_commands_without_retrieval
     delete = await svc.plan_video_editor(
         _video_request(
             "delete",
-            selection={"selectedItemIds": ["tl-caption", "tl-audio-main"], "activeItemId": "tl-caption"},
+            selection={
+                "selectedItemIds": ["tl-caption", "tl-audio-main"],
+                "activeItemId": "tl-caption",
+            },
         )
     )
     assert delete.ok is True

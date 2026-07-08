@@ -8,11 +8,11 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from kuvox_ai.main import create_app
-
 
 @pytest.mark.integration
 def test_health_endpoint_reports_all_healthy() -> None:
+    from kuvox_ai.main import create_app
+
     app = create_app()
     with TestClient(app) as client:
         resp = client.get("/health")

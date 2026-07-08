@@ -160,9 +160,7 @@ async def test_video_editor_retrieval_returns_warnings_for_degraded_dependencies
     qdrant = FakeQdrantNativeClient(
         collections={"shots_transcript"},
         hits_by_collection={
-            "shots_transcript": [
-                hit("shot-1", "media-1", 0.0, 4.0, 0.8, text="partial")
-            ],
+            "shots_transcript": [hit("shot-1", "media-1", 0.0, 4.0, 0.8, text="partial")],
         },
     )
     svc = service(qdrant=qdrant, kuzu=FakeKuzu(fail=True))

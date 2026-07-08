@@ -89,7 +89,9 @@ class RetrievalService:
         ids, so the old generic query returns an empty result instead of
         issuing unrestricted vector searches.
         """
-        logger.info("retrieval.retrieve.start", has_query=bool(query.text.strip()), top_k=query.top_k)
+        logger.info(
+            "retrieval.retrieve.start", has_query=bool(query.text.strip()), top_k=query.top_k
+        )
         return RetrievalResult(query=query.text)
 
     async def retrieve_video_editor(

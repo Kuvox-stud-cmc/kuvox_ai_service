@@ -20,7 +20,9 @@ def test_resolve_ffprobe_uses_sibling_binary_when_path_is_missing(
     ffmpeg_exe.write_bytes(b"")
     ffprobe_exe.write_bytes(b"")
 
-    monkeypatch.setattr("kuvox_ai.modules.media_optimization.ffmpeg.shutil.which", lambda _name: None)
+    monkeypatch.setattr(
+        "kuvox_ai.modules.media_optimization.ffmpeg.shutil.which", lambda _name: None
+    )
     monkeypatch.setitem(
         sys.modules,
         "imageio_ffmpeg",
