@@ -60,13 +60,13 @@ services:
       rabbitmq:
         condition: service_healthy
       seaweedfs-master:
-        condition: service_healthy
+        condition: service_started
       seaweedfs-volume:
-        condition: service_healthy
+        condition: service_started
       seaweedfs-s3:
-        condition: service_healthy
+        condition: service_started
       seaweedfs-filer:
-        condition: service_healthy
+        condition: service_started
     networks:
       - kuvox
 
