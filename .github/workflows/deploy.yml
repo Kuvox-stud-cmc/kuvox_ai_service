@@ -93,10 +93,16 @@ jobs:
           temp_bucket = optional("SEAWEEDFS_TEMP_BUCKET", "kuvox-temp")
 
           def list_read_write(bucket: str) -> list[str]:
-              return [f"List:{bucket}", f"Read:{bucket}/*", f"Write:{bucket}/*"]
+              return [
+                  f"List:{bucket}",
+                  f"Read:{bucket}",
+                  f"Read:{bucket}/*",
+                  f"Write:{bucket}",
+                  f"Write:{bucket}/*",
+              ]
 
           def list_read(bucket: str) -> list[str]:
-              return [f"List:{bucket}", f"Read:{bucket}/*"]
+              return [f"List:{bucket}", f"Read:{bucket}", f"Read:{bucket}/*"]
 
           config = {
               "identities": [
