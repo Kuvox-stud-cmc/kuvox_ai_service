@@ -249,39 +249,17 @@ class MediaOptimizationService:
         canonical_path = job_dir / "canonical.webp"
         thumb_path = job_dir / "thumb.webp"
 
-        await ffmpeg.run_command(
-            [
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(input_path),
-                "-map_metadata",
-                "-1",
-                "-vf",
-                f"scale='min({self._image_max_width},iw)':-2",
-                "-c:v",
-                "libwebp",
-                "-quality",
-                "80",
-                str(canonical_path),
-            ]
+        await write_webp_image_variant(
+            input_path,
+            canonical_path,
+            max_width=self._image_max_width,
+            quality=80,
         )
-        await ffmpeg.run_command(
-            [
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(input_path),
-                "-map_metadata",
-                "-1",
-                "-vf",
-                f"scale={self._thumbnail_width}:-2",
-                "-c:v",
-                "libwebp",
-                "-quality",
-                "70",
-                str(thumb_path),
-            ]
+        await write_webp_image_variant(
+            input_path,
+            thumb_path,
+            max_width=self._thumbnail_width,
+            quality=70,
         )
 
         base_key = output_base_key(request)
@@ -461,6 +439,53 @@ def image_metadata(path: Path) -> dict[str, Any]:
         "width": width,
         "height": height,
     }
+
+
+async def write_webp_image_variant(
+    source: Path,
+    destination: Path,
+    *,
+    max_width: int,
+    quality: int,
+) -> None:
+    await asyncio.to_thread(
+        _write_webp_image_variant_sync,
+        source,
+        destination,
+        max_width,
+        quality,
+    )
+
+
+def _write_webp_image_variant_sync(
+    source: Path,
+    destination: Path,
+    max_width: int,
+    quality: int,
+) -> None:
+    try:
+        from PIL import Image, ImageOps
+    except ImportError as exc:
+        raise RuntimeError("Pillow is required for image optimization.") from exc
+
+    with Image.open(source) as image:
+        normalized = ImageOps.exif_transpose(image)
+        if normalized.mode not in {"RGB", "RGBA"}:
+            normalized = normalized.convert("RGBA" if _has_alpha(normalized) else "RGB")
+
+        width, height = normalized.size
+        if width > max_width:
+            target_height = max(1, round(height * (max_width / width)))
+            normalized = normalized.resize((max_width, target_height), Image.Resampling.LANCZOS)
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        normalized.save(destination, format="WEBP", quality=quality, method=6)
+
+
+def _has_alpha(image: Any) -> bool:
+    return image.mode in {"LA", "RGBA"} or (
+        image.mode == "P" and "transparency" in getattr(image, "info", {})
+    )
 
 
 def _parse_frame_rate(value: object) -> float | None:

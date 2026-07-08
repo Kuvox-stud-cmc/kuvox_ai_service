@@ -49,6 +49,20 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     env_file: .env
+    environment:
+      KUVOX_HOST: "0.0.0.0"
+      KUVOX_PORT: "8000"
+      KUVOX_ENVIRONMENT: "${KUVOX_ENVIRONMENT:-production}"
+      KUVOX_RUN_WORKERS: "${KUVOX_RUN_WORKERS:-true}"
+      KUVOX_QDRANT_HOST: "qdrant"
+      KUVOX_QDRANT_PORT: "6333"
+      KUVOX_REDIS_URL: "redis://redis:6379/0"
+      KUVOX_RABBITMQ_URL: "amqp://${RABBITMQ_DEFAULT_USER:-kuvox}:${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in .env}@rabbitmq:5672/"
+      KUVOX_S3_ENDPOINT_URL: "http://seaweedfs-s3:8333"
+      KUVOX_MEDIA_WORK_DIR: "/tmp/kuvox-media"
+      KUVOX_INGESTION_WORK_DIR: "/tmp/kuvox-ingestion"
+      KUVOX_KUZU_DB_PATH: "./data/kuzu"
+      KUVOX_MODEL_DIR: "./data/models"
     volumes:
       # Persists the embedded Kuzu graph DB + model files across redeploys.
       - kuzu-data:/app/data

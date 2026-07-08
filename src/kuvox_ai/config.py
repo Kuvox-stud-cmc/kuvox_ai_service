@@ -6,6 +6,7 @@ All settings are loaded from environment variables (prefix ``KUVOX_``) and/or a
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -39,6 +40,7 @@ class Settings(BaseSettings):
     environment: Environment = "development"
     log_level: LogLevel = "INFO"
     cors_origins: str = "*"
+    run_workers: bool = True
 
     # --- Kuzu ------------------------------------------------------------
     kuzu_db_path: Path = Path("./data/kuzu")
@@ -185,8 +187,34 @@ class Settings(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def validate_native_path_configuration(self) -> Settings:
+        if os.name == "nt":
+            return self
+
+        path_settings = {
+            "KUVOX_KUZU_DB_PATH": self.kuzu_db_path,
+            "KUVOX_MEDIA_WORK_DIR": self.media_work_dir,
+            "KUVOX_INGESTION_WORK_DIR": self.ingestion_work_dir,
+            "KUVOX_MODEL_DIR": self.model_dir,
+        }
+        for env_name, path in path_settings.items():
+            if _looks_like_windows_drive_path(path):
+                raise ValueError(
+                    f"{env_name} uses a Windows drive path ({path}) but this process is "
+                    "not running on Windows. Use a native macOS/Linux path such as "
+                    "/tmp/kuvox-media, or run the service from native Windows."
+                )
+
+        return self
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return the cached settings singleton."""
     return Settings()
+
+
+def _looks_like_windows_drive_path(path: Path) -> bool:
+    value = str(path)
+    return len(value) >= 3 and value[0].isalpha() and value[1] == ":" and value[2] in {"/", "\\"}

@@ -12,9 +12,9 @@ data side only and trusts its caller for authentication.
 - Python **3.11 or 3.12** (3.12 recommended; the Docker image pins 3.12-slim).
 - The ML ingestion dependencies are not declared for newer Python versions yet.
 - Docker + Docker Compose (for local Qdrant / Redis / RabbitMQ / SeaweedFS).
-- FFmpeg tooling for media pipelines. Image optimization can use the bundled
-  `imageio-ffmpeg` binary, but video/audio optimization and ingestion still need
-  `ffprobe` available on PATH.
+- FFmpeg tooling for video/audio media pipelines. Image optimization uses
+  Pillow; video/audio optimization and ingestion still need `ffmpeg`/`ffprobe`
+  available on PATH.
 - `make`. On Windows install via Chocolatey (`choco install make`) or run the
   underlying commands directly — every target is a one-liner you can paste.
 
@@ -24,7 +24,7 @@ data side only and trusts its caller for authentication.
 cp .env.example .env
 make install      # create .venv, install deps incl. dev extras
 make up           # start local infra via docker-compose
-make dev          # start FastAPI with auto-reload on http://localhost:8000
+make dev          # start FastAPI plus all RabbitMQ workers
 ```
 
 For Conda, create the environment with a supported Python first, then install
@@ -103,19 +103,27 @@ Then:
 - RabbitMQ UI: <http://localhost:15672> (kuvox / kuvox)
 - SeaweedFS console: <http://localhost:8333> 
 
-Run a worker in a separate shell:
+`make dev` runs one FastAPI/Uvicorn process. During app startup, FastAPI wires
+the media optimization, ingestion, rendering, and sandbox RabbitMQ consumers into
+the same process. Press Ctrl-C once to stop the app and its consumers.
+
+Set `KUVOX_RUN_WORKERS=false` or use `make dev-api` when you intentionally want
+the HTTP API without RabbitMQ consumers.
+
+Run a single process directly when debugging one component:
 
 ```bash
+KUVOX_RUN_WORKERS=false .venv/bin/python -m uvicorn kuvox_ai.main:app --reload --host 0.0.0.0 --port 8000
 .venv/bin/python -m kuvox_ai.workers.ingestion_worker
 .venv/bin/python -m kuvox_ai.workers.media_optimization_worker
 .venv/bin/python -m kuvox_ai.workers.rendering_worker
 .venv/bin/python -m kuvox_ai.workers.sandbox_worker
 ```
 
-The FastAPI server does not run RabbitMQ workers. Uploads stay in the API's
-`Uploaded`/optimizing state until `kuvox_ai.workers.media_optimization_worker`
-is running and consuming `media.optimization.requested`. Videos then move to
-`Processing` and require `kuvox_ai.workers.ingestion_worker` to reach `Ready`.
+If workers are disabled, uploads stay in the API's `Uploaded`/optimizing state
+until `kuvox_ai.workers.media_optimization_worker` is running and consuming
+`media.optimization.requested`. Videos then move to `Processing` and require
+`kuvox_ai.workers.ingestion_worker` to reach `Ready`.
 
 Use the environment-specific paths and hostnames from the Environment Variables
 section above before starting workers.
@@ -126,8 +134,8 @@ canonical/proxy/thumbnail objects, and publishes `media.optimization.completed`
 or `media.optimization.failed`. These messages are media-library scoped and do not
 carry `projectId`; project/media association is handled by the API's Projects module.
 Optimization downloads stream objects directly to the local job directory to avoid
-Windows S3 temp-file rename failures. Image metadata is read with Pillow after
-conversion; video/audio metadata still comes from FFprobe.
+Windows S3 temp-file rename failures. Image conversion and metadata use Pillow;
+video/audio metadata still comes from FFprobe.
 
 ## Module map
 
@@ -145,7 +153,7 @@ src/kuvox_ai/
 │   ├── rendering/  # MoviePy/FFmpeg execution of plans (RabbitMQ-triggered)
 │   └── sandbox/    # dockerized execution of LLM-generated Python
 ├── schemas/        # cross-module domain models (Shot, Video, Plan, ...)
-└── workers/        # one process per heavy workload
+└── workers/        # RabbitMQ handlers wired into FastAPI, with standalone entry points
 ```
 
 Each module's `README.md` describes its responsibility in detail. Modules
@@ -157,7 +165,8 @@ their `__init__.py`.
 | Target          | What it does                                                  |
 | --------------- | ------------------------------------------------------------- |
 | `make install`  | Create `.venv` and install with `[dev]` extras                |
-| `make dev`      | Run FastAPI with auto-reload                                  |
+| `make dev`      | Run FastAPI with auto-reload and app-wired workers            |
+| `make dev-api`  | Run FastAPI with RabbitMQ workers disabled                    |
 | `make up`       | Start local infra (Qdrant, Redis, RabbitMQ, SeaweedFS)            |
 | `make down`     | Stop local infra                                              |
 | `make test`     | Run pytest                                                    |

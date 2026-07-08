@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 from pydantic import ValidationError
 
@@ -18,6 +20,16 @@ def test_settings_reject_partial_s3_credentials() -> None:
 
     with pytest.raises(ValidationError, match="KUVOX_S3_ACCESS_KEY is required"):
         Settings(s3_access_key=None, s3_secret_key="secret")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows drive paths are valid on Windows")
+def test_settings_reject_windows_drive_paths_on_posix() -> None:
+    with pytest.raises(ValidationError, match="KUVOX_MEDIA_WORK_DIR uses a Windows drive path"):
+        Settings(
+            s3_access_key="kuvox-ai-dev",
+            s3_secret_key="secret",
+            media_work_dir="D:/Kuvox/.codex-tmp/kuvox-media",
+        )
 
 
 def test_object_storage_client_from_settings_uses_configured_credentials_and_no_create() -> None:

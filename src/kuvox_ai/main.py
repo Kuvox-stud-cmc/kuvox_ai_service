@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import uvicorn
+from aio_pika.abc import AbstractIncomingMessage
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -31,6 +32,7 @@ from kuvox_ai.infrastructure import (
     RedisClient,
     build_llm_client,
 )
+from kuvox_ai.infrastructure.rabbitmq_client import retry_attempt
 from kuvox_ai.logging import configure_logging, get_logger
 from kuvox_ai.modules.ingestion import IngestionService
 from kuvox_ai.modules.media_optimization import MediaOptimizationService
@@ -38,6 +40,12 @@ from kuvox_ai.modules.planning import PlanningService
 from kuvox_ai.modules.rendering import RenderingService
 from kuvox_ai.modules.retrieval import RetrievalService
 from kuvox_ai.modules.sandbox import SandboxService
+from kuvox_ai.workers import (
+    ingestion_worker,
+    media_optimization_worker,
+    rendering_worker,
+    sandbox_worker,
+)
 
 
 def _build_state(settings: Settings) -> AppState:
@@ -123,8 +131,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("app.starting", environment=settings.environment)
 
     state = _build_state(settings)
-    # Kuzu uses an exclusive embedded-database lock. Ingestion workers own the
-    # write connection; the API opens it lazily when graph reads are implemented.
+    await state.kuzu.connect()
     await state.qdrant.connect()
     await state.redis.connect()
     await state.rabbitmq.connect()
@@ -132,6 +139,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await state.llm.connect()
 
     app.state.kuvox = state
+    if settings.run_workers:
+        await _start_workers(state, settings)
+    else:
+        logger.info("app.workers.disabled")
+
     logger.info("app.started")
     try:
         yield
@@ -151,6 +163,71 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("app.close_failed", closer=closer.__qualname__, error=str(exc))
         logger.info("app.stopped")
+
+
+async def _start_workers(state: AppState, settings: Settings) -> None:
+    """Register RabbitMQ worker consumers in the FastAPI process."""
+    logger = get_logger(__name__)
+
+    await state.rabbitmq.declare_retry_topology(
+        settings.media_optimization_requested_queue,
+        settings.media_optimization_requested_routing_key,
+        settings.rabbitmq_retry_delay_list,
+    )
+
+    async def handle_media_optimization(message: AbstractIncomingMessage) -> None:
+        async with message.process(requeue=True):
+            headers = dict(message.headers or {})
+            await media_optimization_worker.handle_message_body(
+                message.body,
+                service=state.media_optimization,
+                rabbitmq=state.rabbitmq,
+                completed_routing_key=settings.media_optimization_completed_routing_key,
+                failed_routing_key=settings.media_optimization_failed_routing_key,
+                queue_name=settings.media_optimization_requested_queue,
+                retry_attempt=retry_attempt(headers),
+                max_retry_attempts=settings.rabbitmq_retry_attempts,
+                headers=headers,
+            )
+
+    await state.rabbitmq.consume_bound_queue(
+        settings.media_optimization_requested_queue,
+        settings.media_optimization_requested_routing_key,
+        handle_media_optimization,
+        prefetch_count=settings.media_optimization_concurrency,
+    )
+
+    await state.rabbitmq.declare_retry_topology(
+        settings.ingestion_requested_queue,
+        settings.ingestion_requested_routing_key,
+        settings.rabbitmq_retry_delay_list,
+    )
+
+    async def handle_ingestion(message: AbstractIncomingMessage) -> None:
+        async with message.process(requeue=True):
+            headers = dict(message.headers or {})
+            await ingestion_worker.handle_message_body(
+                message.body,
+                service=state.ingestion,
+                rabbitmq=state.rabbitmq,
+                completed_routing_key=settings.ingestion_completed_routing_key,
+                failed_routing_key=settings.ingestion_failed_routing_key,
+                queue_name=settings.ingestion_requested_queue,
+                retry_attempt=retry_attempt(headers),
+                max_retry_attempts=settings.rabbitmq_retry_attempts,
+                headers=headers,
+            )
+
+    await state.rabbitmq.consume_bound_queue(
+        settings.ingestion_requested_queue,
+        settings.ingestion_requested_routing_key,
+        handle_ingestion,
+        prefetch_count=settings.ingestion_concurrency,
+    )
+
+    await state.rabbitmq.consume(settings.queue_rendering, rendering_worker.handle_message)
+    await state.rabbitmq.consume(settings.queue_sandbox, sandbox_worker.handle_message)
+    logger.info("app.workers.started")
 
 
 def create_app() -> FastAPI:

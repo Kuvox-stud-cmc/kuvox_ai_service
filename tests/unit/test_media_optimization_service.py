@@ -54,6 +54,17 @@ async def fake_run_command(args: list[str], timeout_seconds: int = 900) -> None:
     await asyncio.to_thread(Path(args[-1]).write_bytes, b"optimized")
 
 
+async def fake_write_webp_image_variant(
+    _source: Path,
+    destination: Path,
+    *,
+    max_width: int,
+    quality: int,
+) -> None:
+    del max_width, quality
+    await asyncio.to_thread(destination.write_bytes, b"optimized")
+
+
 async def fake_ffprobe_json(_path: Path) -> dict[str, Any]:
     return {
         "format": {"duration": "10.5"},
@@ -118,6 +129,11 @@ async def test_service_uploads_deterministic_outputs(
     mock_storage.download_file.side_effect = fake_download_file
     monkeypatch.setattr(ffmpeg, "run_command", fake_run_command)
     monkeypatch.setattr(ffmpeg, "ffprobe_json", fake_ffprobe_json)
+    monkeypatch.setattr(
+        media_optimization_service,
+        "write_webp_image_variant",
+        fake_write_webp_image_variant,
+    )
     monkeypatch.setattr(
         media_optimization_service,
         "image_metadata",
@@ -236,3 +252,40 @@ async def test_optional_preview_failure_does_not_block_canonical_completion(
     assert result.canonical is not None
     assert result.proxy is None
     assert result.thumbnail is None
+
+
+async def test_image_optimization_does_not_require_ffmpeg_webp_encoder(
+    tmp_path: Path,
+    mock_storage: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def download_image(_bucket: str, _key: str, destination: Path) -> None:
+        def write_image() -> None:
+            from PIL import Image
+
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGBA", (32, 24), (255, 0, 0, 128)).save(destination)
+
+        await asyncio.to_thread(write_image)
+
+    async def fail_if_ffmpeg_is_used(args: list[str], timeout_seconds: int = 900) -> None:
+        del args, timeout_seconds
+        raise AssertionError("Image optimization should use Pillow, not FFmpeg.")
+
+    mock_storage.download_file.side_effect = download_image
+    monkeypatch.setattr(ffmpeg, "run_command", fail_if_ffmpeg_is_used)
+
+    result = await make_service(mock_storage, tmp_path).optimize(
+        make_request("Image", filename="demo.png", content_type="image/png")
+    )
+
+    actual_uploads = [
+        (call.args[1], call.args[2], call.kwargs["content_type"])
+        for call in mock_storage.upload_file.call_args_list
+    ]
+    assert actual_uploads == [
+        ("kuvox-canonical", "media/media-1/canonical.webp", "image/webp"),
+        ("kuvox-thumbnails", "media/media-1/thumb.webp", "image/webp"),
+    ]
+    assert result.width == 32
+    assert result.height == 24

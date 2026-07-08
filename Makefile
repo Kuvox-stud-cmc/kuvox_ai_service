@@ -11,18 +11,21 @@ endif
 PIP := $(VENV_BIN)/pip
 PY := $(VENV_BIN)/python
 
-.PHONY: help install dev test lint typecheck format worker-media-optimization worker-ingestion worker-media up down clean
+.PHONY: help install dev dev-api test lint typecheck format worker-media-optimization worker-ingestion worker-rendering worker-sandbox worker-media up down clean
 
 help: ## Show this help.
-	@awk 'BEGIN {FS = ":.*##"; printf "Targets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "Targets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 install: ## Create venv and install all dependencies (incl. dev extras).
 	$(PYTHON) -m venv $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -e ".[dev]"
 
-dev: ## Run the FastAPI service with auto-reload on localhost:8000.
+dev: ## Run FastAPI with all RabbitMQ workers wired into app startup.
 	$(PY) -m uvicorn kuvox_ai.main:app --reload --host 0.0.0.0 --port 8000
+
+dev-api: ## Run only FastAPI with RabbitMQ workers disabled.
+	KUVOX_RUN_WORKERS=false $(PY) -m uvicorn kuvox_ai.main:app --reload --host 0.0.0.0 --port 8000
 
 test: ## Run the pytest suite.
 	$(PY) -m pytest
@@ -43,6 +46,12 @@ worker-media-optimization: ## Run the media optimization worker.
 
 worker-ingestion: ## Run the ingestion worker.
 	$(PY) -m kuvox_ai.workers.ingestion_worker
+
+worker-rendering: ## Run the rendering worker.
+	$(PY) -m kuvox_ai.workers.rendering_worker
+
+worker-sandbox: ## Run the sandbox worker.
+	$(PY) -m kuvox_ai.workers.sandbox_worker
 
 worker-media: worker-media-optimization ## Alias for worker-media-optimization.
 

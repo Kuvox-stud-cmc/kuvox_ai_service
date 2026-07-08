@@ -1,14 +1,13 @@
 name: Deploy
 
 on:
-  # CD is PAUSED — there is no remote host to deploy to (the DigitalOcean Droplet was
-  # destroyed; services now run locally on a Mac via `make dev` + a Cloudflare Tunnel).
-  # The workflow is kept but made manual-only (Actions tab → "Run workflow"). To resume
-  # automatic deploys, restore the `push:` trigger below and re-point the DROPLET_* repo
-  # secrets/variables (or switch to a self-hosted runner).
   workflow_dispatch:
   push:
     branches: [develop, main]
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: true
 
 env:
   COMPOSE_FILE: docker-compose.prod.yml
@@ -39,7 +38,10 @@ jobs:
         id: img
         env:
           OWNER: ${{ github.repository_owner }}
-        run: echo "name=ghcr.io/${OWNER,,}/kuvox-ai" >> "$GITHUB_OUTPUT"
+        run: |
+          owner="${OWNER,,}"
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "name=ghcr.io/$owner/kuvox-ai" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -171,6 +173,10 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             cd /opt/kuvox
+            export GITHUB_OWNER="${{ steps.img.outputs.owner }}"
+            export AI_TAG="${{ steps.tag.outputs.tag }}"
+            export KUVOX_ENVIRONMENT="${{ steps.tag.outputs.env }}"
+            docker compose -f docker-compose.prod.yml config >/dev/null
             docker compose -f docker-compose.prod.yml pull kuvox-ai
             docker compose -f docker-compose.prod.yml up -d kuvox-ai
             docker image prune -f
