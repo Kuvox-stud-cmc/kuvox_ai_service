@@ -261,7 +261,8 @@ class IngestionService:
             )
             await self._writer.write_video_with_shots(request, metadata, shots)
             logger.info("ingestion.ingest.graph_written", media_id=request.media_id)
-            frames = await self._frame_sampler.sample_frames(
+            frames = await self._sample_frames_best_effort(
+                request,
                 canonical_path,
                 shots,
                 job_dir / "frames",
@@ -369,6 +370,27 @@ class IngestionService:
             visual_count=visual_count,
             ocr_count=ocr_count,
         )
+
+    async def _sample_frames_best_effort(
+        self,
+        request: IngestionRequested,
+        canonical_path: Path,
+        shots: list[DetectedShot],
+        output_dir: Path,
+    ) -> list[SampledFrame]:
+        try:
+            return await self._frame_sampler.sample_frames(
+                canonical_path,
+                shots,
+                output_dir,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingestion.ingest.frame_sampling_failed",
+                media_id=request.media_id,
+                error=str(exc) or exc.__class__.__name__,
+            )
+            return []
 
     async def _index_visual_best_effort(
         self,

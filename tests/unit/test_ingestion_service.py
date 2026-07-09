@@ -329,6 +329,77 @@ async def test_ingest_visual_indexing_errors_do_not_block_completion(
     assert result.media_id == "media-1"
 
 
+async def test_ingest_frame_sampling_errors_do_not_block_completion(
+    mock_kuzu: AsyncMock,
+    mock_storage: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = IngestionRequested.model_validate(requested_payload())
+    writer = AsyncMock()
+    shot = DetectedShot(
+        shot_id="media-1:shot:000000",
+        media_id="media-1",
+        shot_index=0,
+        start_seconds=0,
+        end_seconds=12,
+        duration_seconds=12,
+    )
+
+    monkeypatch.setattr(
+        service_module,
+        "probe_video_metadata",
+        AsyncMock(return_value=VideoMetadata(duration_seconds=12)),
+    )
+    monkeypatch.setattr(service_module, "detect_video_shots", AsyncMock(return_value=[shot]))
+    frame_sampler = AsyncMock()
+    visual_encoder = AsyncMock()
+    visual_writer = AsyncMock()
+    audio_extractor = AsyncMock()
+    transcriber = AsyncMock()
+    text_encoder = AsyncMock()
+    audio_encoder = AsyncMock()
+    ocr_reader = AsyncMock()
+    transcript_writer = AsyncMock()
+    audio_writer = AsyncMock()
+    ocr_writer = AsyncMock()
+    frame_sampler.sample_frames.side_effect = AssertionError()
+    visual_encoder.encode_frames.return_value = []
+    audio_extractor.has_audio_stream.return_value = False
+    ocr_reader.read_frames.return_value = []
+    text_encoder.encode_texts.return_value = []
+
+    svc = IngestionService(
+        kuzu=mock_kuzu,
+        storage=mock_storage,
+        work_dir=tmp_path,
+        writer=writer,
+        frame_sampler=frame_sampler,
+        visual_encoder=visual_encoder,
+        visual_writer=visual_writer,
+        audio_extractor=audio_extractor,
+        transcriber=transcriber,
+        text_encoder=text_encoder,
+        audio_encoder=audio_encoder,
+        ocr_reader=ocr_reader,
+        transcript_writer=transcript_writer,
+        audio_writer=audio_writer,
+        ocr_writer=ocr_writer,
+    )
+
+    result = await svc.ingest(request)
+
+    writer.write_video_with_shots.assert_awaited_once()
+    frame_sampler.sample_frames.assert_awaited_once()
+    visual_writer.write_shot_vectors.assert_awaited_once_with(request, [], [])
+    transcript_writer.write_points.assert_awaited_once_with(request, [])
+    audio_writer.write_points.assert_awaited_once_with(request, [])
+    ocr_writer.write_points.assert_awaited_once()
+    assert result.media_id == "media-1"
+    assert result.shot_count == 1
+    assert result.visual_count == 0
+
+
 async def test_ingest_no_audio_deletes_transcript_audio_points_and_indexes_ocr(
     mock_kuzu: AsyncMock,
     mock_storage: AsyncMock,

@@ -51,20 +51,21 @@ async def handle_message_body(
     try:
         result = await service.ingest(request)
     except Exception as exc:  # noqa: BLE001
+        error_message = str(exc) or exc.__class__.__name__
         if queue_name is not None and retry_attempt < max_retry_attempts:
             await rabbitmq.publish_retry(
                 queue_name,
                 retry_attempt + 1,
                 body,
                 error_code=exc.__class__.__name__,
-                error_message=str(exc),
+                error_message=error_message,
                 headers=headers,
             )
             logger.warning(
                 "ingestion_worker.retry_scheduled",
                 media_id=request.media_id,
                 attempt=retry_attempt + 1,
-                error=str(exc),
+                error=error_message,
             )
             return
 
@@ -74,7 +75,7 @@ async def handle_message_body(
             source_event_id=request.event_id,
             media_id=request.media_id,
             error_code=exc.__class__.__name__,
-            error_message=str(exc) or exc.__class__.__name__,
+            error_message=error_message,
         )
         await rabbitmq.publish_json(
             failed_routing_key,
@@ -85,10 +86,10 @@ async def handle_message_body(
                 queue_name,
                 body,
                 error_code=exc.__class__.__name__,
-                error_message=str(exc),
+                error_message=error_message,
                 headers=headers,
             )
-        logger.warning("ingestion_worker.failed", media_id=request.media_id, error=str(exc))
+        logger.warning("ingestion_worker.failed", media_id=request.media_id, error=error_message)
         return
 
     await rabbitmq.publish_json(
