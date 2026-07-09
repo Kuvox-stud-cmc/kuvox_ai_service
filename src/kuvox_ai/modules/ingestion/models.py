@@ -62,6 +62,20 @@ class VideoMetadata(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class AudioMetadata(BaseModel):
+    duration_seconds: float | None = Field(default=None, alias="durationSeconds")
+    codec: str | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ImageMetadata(BaseModel):
+    width: int | None = None
+    height: int | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class DetectedShot(BaseModel):
     shot_id: str = Field(alias="shotId")
     media_id: str = Field(alias="mediaId")
@@ -83,6 +97,10 @@ class IngestionCompleted(BaseModel):
     source_event_id: str = Field(alias="sourceEventId")
     media_id: str = Field(alias="mediaId")
     shot_count: int = Field(alias="shotCount")
+    visual_count: int | None = Field(default=None, alias="visualCount")
+    audio_count: int | None = Field(default=None, alias="audioCount")
+    transcript_count: int | None = Field(default=None, alias="transcriptCount")
+    ocr_count: int | None = Field(default=None, alias="ocrCount")
 
     model_config = ConfigDict(populate_by_name=True)
 

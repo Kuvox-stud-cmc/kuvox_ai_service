@@ -12,14 +12,28 @@ from uuid import uuid4
 
 from kuvox_ai.infrastructure import KuzuClient, ObjectStorageClient, QdrantClient
 from kuvox_ai.logging import get_logger
-from kuvox_ai.modules.ingestion.audio import AudioExtractor, FFmpegAudioExtractor
+from kuvox_ai.modules.ingestion.audio import AudioExtractor, FFmpegAudioExtractor, ShotAudioClip
 from kuvox_ai.modules.ingestion.audio_encoder import AudioEmbeddingEncoder, MsClapAudioEncoder
 from kuvox_ai.modules.ingestion.frame_sampler import FFmpegFrameSampler, FrameSampler, SampledFrame
 from kuvox_ai.modules.ingestion.kuzu_writer import KuzuIngestionWriter
-from kuvox_ai.modules.ingestion.metadata import probe_video_metadata
-from kuvox_ai.modules.ingestion.modality_points import audio_points, ocr_points, transcript_points
+from kuvox_ai.modules.ingestion.metadata import (
+    probe_audio_metadata,
+    probe_image_metadata,
+    probe_video_metadata,
+)
+from kuvox_ai.modules.ingestion.modality_points import (
+    audio_media_point,
+    audio_points,
+    audio_transcript_point,
+    image_ocr_point,
+    image_visual_point,
+    ocr_points,
+    transcript_points,
+)
 from kuvox_ai.modules.ingestion.models import (
+    AudioMetadata,
     DetectedShot,
+    ImageMetadata,
     IngestionCompleted,
     IngestionRequested,
     MediaKind,
@@ -69,11 +83,19 @@ class IngestionService:
         transcript_writer: ShotEmbeddingIndexWriter | None = None,
         audio_writer: ShotEmbeddingIndexWriter | None = None,
         ocr_writer: ShotEmbeddingIndexWriter | None = None,
+        media_visual_writer: ShotEmbeddingIndexWriter | None = None,
+        media_audio_writer: ShotEmbeddingIndexWriter | None = None,
+        media_transcript_writer: ShotEmbeddingIndexWriter | None = None,
+        media_ocr_writer: ShotEmbeddingIndexWriter | None = None,
         visual_collection_name: str = "shots_visual",
         visual_embedding_dim: int = 512,
         transcript_collection_name: str = "shots_transcript",
         audio_collection_name: str = "shots_audio",
         ocr_collection_name: str = "shots_ocr",
+        media_visual_collection_name: str = "media_visual",
+        media_audio_collection_name: str = "media_audio",
+        media_transcript_collection_name: str = "media_transcript",
+        media_ocr_collection_name: str = "media_ocr",
         text_embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
         text_embedding_dim: int = 384,
         text_embedding_device: str = "auto",
@@ -159,10 +181,42 @@ class IngestionService:
             collection_name=ocr_collection_name,
             embedding_dim=text_embedding_dim,
         )
+        self._media_visual_writer = build_embedding_writer(
+            qdrant=qdrant,
+            writer=media_visual_writer,
+            collection_name=media_visual_collection_name,
+            embedding_dim=visual_embedding_dim,
+        )
+        self._media_audio_writer = build_embedding_writer(
+            qdrant=qdrant,
+            writer=media_audio_writer,
+            collection_name=media_audio_collection_name,
+            embedding_dim=audio_embedding_dim,
+        )
+        self._media_transcript_writer = build_embedding_writer(
+            qdrant=qdrant,
+            writer=media_transcript_writer,
+            collection_name=media_transcript_collection_name,
+            embedding_dim=text_embedding_dim,
+        )
+        self._media_ocr_writer = build_embedding_writer(
+            qdrant=qdrant,
+            writer=media_ocr_writer,
+            collection_name=media_ocr_collection_name,
+            embedding_dim=text_embedding_dim,
+        )
 
     async def ingest(self, request: IngestionRequested) -> IngestionCompleted:
-        if request.kind != MediaKind.video:
-            raise ValueError(f"Ingestion only supports video media, got {request.kind}.")
+        if request.kind == MediaKind.video:
+            return await self.ingest_video(request)
+        if request.kind == MediaKind.audio:
+            return await self.ingest_audio(request)
+        if request.kind == MediaKind.image:
+            return await self.ingest_image(request)
+
+        raise ValueError(f"Unsupported media kind: {request.kind}")
+
+    async def ingest_video(self, request: IngestionRequested) -> IngestionCompleted:
         if self._visual_writer is None:
             raise RuntimeError("Visual indexing requires a connected Qdrant writer.")
         if (
@@ -217,8 +271,14 @@ class IngestionService:
                 media_id=request.media_id,
                 frame_count=len(frames),
             )
-            await self._index_visual_best_effort(request, frames)
-            await self._index_optional_best_effort(request, canonical_path, shots, frames, job_dir)
+            visual_count = await self._index_visual_best_effort(request, frames)
+            optional_counts = await self._index_optional_best_effort(
+                request,
+                canonical_path,
+                shots,
+                frames,
+                job_dir,
+            )
 
         logger.info("ingestion.ingest.completed", media_id=request.media_id, shot_count=len(shots))
         return IngestionCompleted(
@@ -227,16 +287,97 @@ class IngestionService:
             source_event_id=request.event_id,
             media_id=request.media_id,
             shot_count=len(shots),
+            visual_count=visual_count,
+            audio_count=optional_counts["audio"],
+            transcript_count=optional_counts["transcript"],
+            ocr_count=optional_counts["ocr"],
+        )
+
+    async def ingest_audio(self, request: IngestionRequested) -> IngestionCompleted:
+        if self._media_audio_writer is None:
+            raise RuntimeError("Audio ingestion requires a connected media audio writer.")
+        if self._media_transcript_writer is None:
+            raise RuntimeError("Audio transcript ingestion requires a connected media writer.")
+
+        self._work_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("ingestion.audio.start", media_id=request.media_id)
+
+        with temporary_job_dir(self._work_dir) as job_dir:
+            canonical_path = job_dir / canonical_filename(request.canonical.object_key)
+            await self._storage.download_file(
+                request.canonical.bucket_name,
+                request.canonical.object_key,
+                canonical_path,
+            )
+            metadata = merge_audio_metadata(
+                request_metadata=AudioMetadata(
+                    duration_seconds=request.duration_seconds,
+                    codec=request.codec,
+                ),
+                probed_metadata=await probe_audio_metadata(canonical_path),
+            )
+            await self._writer.write_audio(request, metadata)
+            audio_count = await self._index_media_audio(request, canonical_path, metadata)
+            transcript_count = await self._index_audio_transcript_best_effort(
+                request,
+                canonical_path,
+            )
+
+        logger.info("ingestion.audio.completed", media_id=request.media_id)
+        return IngestionCompleted(
+            event_id=str(uuid4()),
+            occurred_at=datetime.now(UTC),
+            source_event_id=request.event_id,
+            media_id=request.media_id,
+            shot_count=0,
+            audio_count=audio_count,
+            transcript_count=transcript_count,
+        )
+
+    async def ingest_image(self, request: IngestionRequested) -> IngestionCompleted:
+        if self._media_visual_writer is None:
+            raise RuntimeError("Image ingestion requires a connected media visual writer.")
+        if self._media_ocr_writer is None:
+            raise RuntimeError("Image OCR ingestion requires a connected media writer.")
+
+        self._work_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("ingestion.image.start", media_id=request.media_id)
+
+        with temporary_job_dir(self._work_dir) as job_dir:
+            canonical_path = job_dir / canonical_filename(request.canonical.object_key)
+            await self._storage.download_file(
+                request.canonical.bucket_name,
+                request.canonical.object_key,
+                canonical_path,
+            )
+            metadata = merge_image_metadata(
+                request_metadata=ImageMetadata(width=request.width, height=request.height),
+                probed_metadata=await probe_image_metadata(canonical_path),
+            )
+            await self._writer.write_image(request, metadata)
+            frame = media_image_frame(request, canonical_path)
+            visual_count = await self._index_media_visual(request, frame, metadata)
+            ocr_count = await self._index_image_ocr_best_effort(request, frame)
+
+        logger.info("ingestion.image.completed", media_id=request.media_id)
+        return IngestionCompleted(
+            event_id=str(uuid4()),
+            occurred_at=datetime.now(UTC),
+            source_event_id=request.event_id,
+            media_id=request.media_id,
+            shot_count=0,
+            visual_count=visual_count,
+            ocr_count=ocr_count,
         )
 
     async def _index_visual_best_effort(
         self,
         request: IngestionRequested,
         frames: list[SampledFrame],
-    ) -> None:
+    ) -> int:
         assert self._visual_writer is not None
         try:
-            await asyncio.wait_for(
+            return await asyncio.wait_for(
                 self._index_visual(request, frames),
                 timeout=self._visual_index_timeout_seconds,
             )
@@ -246,22 +387,25 @@ class IngestionService:
                 media_id=request.media_id,
                 timeout_seconds=self._visual_index_timeout_seconds,
             )
+            return 0
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "ingestion.ingest.visual_index_failed",
                 media_id=request.media_id,
                 error=str(exc),
             )
+            return 0
 
     async def _index_visual(
         self,
         request: IngestionRequested,
         frames: list[SampledFrame],
-    ) -> None:
+    ) -> int:
         assert self._visual_writer is not None
         embeddings = await self._visual_encoder.encode_frames(frames)
         await self._visual_writer.write_shot_vectors(request, frames, embeddings)
         logger.info("ingestion.ingest.visual_indexed", media_id=request.media_id)
+        return len(embeddings)
 
     async def _index_optional_best_effort(
         self,
@@ -270,9 +414,9 @@ class IngestionService:
         shots: list[DetectedShot],
         frames: list[SampledFrame],
         job_dir: Path,
-    ) -> None:
+    ) -> dict[str, int]:
         try:
-            await asyncio.wait_for(
+            return await asyncio.wait_for(
                 self._index_transcript_audio_ocr(
                     request=request,
                     canonical_path=canonical_path,
@@ -288,12 +432,14 @@ class IngestionService:
                 media_id=request.media_id,
                 timeout_seconds=self._optional_index_timeout_seconds,
             )
+            return {"transcript": 0, "audio": 0, "ocr": 0}
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "ingestion.ingest.optional_index_failed",
                 media_id=request.media_id,
                 error=str(exc),
             )
+            return {"transcript": 0, "audio": 0, "ocr": 0}
 
     async def _index_transcript_audio_ocr(
         self,
@@ -303,7 +449,7 @@ class IngestionService:
         shots: list[DetectedShot],
         frames: list[SampledFrame],
         job_dir: Path,
-    ) -> None:
+    ) -> dict[str, int]:
         assert self._transcript_writer is not None
         assert self._audio_writer is not None
         assert self._ocr_writer is not None
@@ -328,6 +474,7 @@ class IngestionService:
                 request,
                 transcript_points(request, shot_transcripts, transcript_embeddings),
             )
+            transcript_count = len(shot_transcripts)
 
             audio_clips = await self._audio_extractor.extract_shot_audio_clips(
                 canonical_path,
@@ -339,9 +486,12 @@ class IngestionService:
                 request,
                 audio_points(request, audio_clips, audio_embeddings),
             )
+            audio_count = len(audio_clips)
         else:
             await self._transcript_writer.write_points(request, [])
             await self._audio_writer.write_points(request, [])
+            transcript_count = 0
+            audio_count = 0
 
         shot_ocr_texts = [
             shot_ocr_text
@@ -356,6 +506,155 @@ class IngestionService:
             ocr_points(request, shot_ocr_texts, ocr_embeddings),
         )
         logger.info("ingestion.ingest.optional_indexing_completed", media_id=request.media_id)
+        return {"transcript": transcript_count, "audio": audio_count, "ocr": len(shot_ocr_texts)}
+
+    async def _index_media_visual(
+        self,
+        request: IngestionRequested,
+        frame: SampledFrame,
+        metadata: ImageMetadata,
+    ) -> int:
+        assert self._media_visual_writer is not None
+        embeddings = await self._visual_encoder.encode_frames([frame])
+        if len(embeddings) != 1:
+            raise ValueError(f"Expected 1 image visual embedding, got {len(embeddings)}.")
+        await self._media_visual_writer.write_points(
+            request,
+            [image_visual_point(request, metadata, embeddings[0])],
+        )
+        return 1
+
+    async def _index_media_audio(
+        self,
+        request: IngestionRequested,
+        canonical_path: Path,
+        metadata: AudioMetadata,
+    ) -> int:
+        assert self._media_audio_writer is not None
+        clip = ShotAudioClip(
+            shot=media_level_shot(request),
+            path=canonical_path,
+            clip_start_seconds=0.0,
+            clip_end_seconds=metadata.duration_seconds or 0.0,
+            clip_duration_seconds=metadata.duration_seconds or 0.0,
+        )
+        embeddings = await self._audio_encoder.encode_audio_clips([clip])
+        if len(embeddings) != 1:
+            raise ValueError(f"Expected 1 audio embedding, got {len(embeddings)}.")
+        await self._media_audio_writer.write_points(
+            request,
+            [audio_media_point(request, metadata, embeddings[0])],
+        )
+        return 1
+
+    async def _index_audio_transcript_best_effort(
+        self,
+        request: IngestionRequested,
+        canonical_path: Path,
+    ) -> int:
+        assert self._media_transcript_writer is not None
+        try:
+            return await asyncio.wait_for(
+                self._index_audio_transcript(request, canonical_path),
+                timeout=self._optional_index_timeout_seconds,
+            )
+        except TimeoutError:
+            logger.warning(
+                "ingestion.audio.transcript_timeout",
+                media_id=request.media_id,
+                timeout_seconds=self._optional_index_timeout_seconds,
+            )
+            return 0
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingestion.audio.transcript_failed",
+                media_id=request.media_id,
+                error=str(exc),
+            )
+            return 0
+
+    async def _index_audio_transcript(
+        self,
+        request: IngestionRequested,
+        canonical_path: Path,
+    ) -> int:
+        assert self._media_transcript_writer is not None
+        segments = await self._transcriber.transcribe(canonical_path)
+        text = " ".join(segment.text for segment in segments if segment.text.strip()).strip()
+        if not text:
+            await self._media_transcript_writer.write_points(request, [])
+            return 0
+
+        embeddings = await self._text_encoder.encode_texts([text])
+        if len(embeddings) != 1:
+            raise ValueError(f"Expected 1 transcript embedding, got {len(embeddings)}.")
+        await self._media_transcript_writer.write_points(
+            request,
+            [audio_transcript_point(request, text, embeddings[0], segment_count=len(segments))],
+        )
+        return 1
+
+    async def _index_image_ocr_best_effort(
+        self,
+        request: IngestionRequested,
+        frame: SampledFrame,
+    ) -> int:
+        assert self._media_ocr_writer is not None
+        try:
+            return await asyncio.wait_for(
+                self._index_image_ocr(request, frame),
+                timeout=self._optional_index_timeout_seconds,
+            )
+        except TimeoutError:
+            logger.warning(
+                "ingestion.image.ocr_timeout",
+                media_id=request.media_id,
+                timeout_seconds=self._optional_index_timeout_seconds,
+            )
+            return 0
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingestion.image.ocr_failed",
+                media_id=request.media_id,
+                error=str(exc),
+            )
+            return 0
+
+    async def _index_image_ocr(self, request: IngestionRequested, frame: SampledFrame) -> int:
+        assert self._media_ocr_writer is not None
+        ocr_texts = [
+            ocr_text
+            for ocr_text in await self._ocr_reader.read_frames([frame])
+            if ocr_text.text.strip()
+        ]
+        if not ocr_texts:
+            await self._media_ocr_writer.write_points(request, [])
+            return 0
+
+        text = " ".join(ocr_text.text for ocr_text in ocr_texts).strip()
+        embeddings = await self._text_encoder.encode_texts([text])
+        if len(embeddings) != 1:
+            raise ValueError(f"Expected 1 OCR embedding, got {len(embeddings)}.")
+        text_block_count = sum(ocr_text.text_block_count for ocr_text in ocr_texts)
+        confidences = [
+            ocr_text.mean_confidence
+            for ocr_text in ocr_texts
+            if ocr_text.mean_confidence is not None
+        ]
+        mean_confidence = sum(confidences) / len(confidences) if confidences else None
+        await self._media_ocr_writer.write_points(
+            request,
+            [
+                image_ocr_point(
+                    request,
+                    text,
+                    embeddings[0],
+                    text_block_count=text_block_count,
+                    mean_confidence=mean_confidence,
+                )
+            ],
+        )
+        return 1
 
 
 def build_embedding_writer(
@@ -401,4 +700,45 @@ def merge_metadata(
         height=probed_metadata.height or request_metadata.height,
         frame_rate=probed_metadata.frame_rate or request_metadata.frame_rate,
         codec=probed_metadata.codec or request_metadata.codec,
+    )
+
+
+def merge_audio_metadata(
+    *,
+    request_metadata: AudioMetadata,
+    probed_metadata: AudioMetadata,
+) -> AudioMetadata:
+    return AudioMetadata(
+        duration_seconds=probed_metadata.duration_seconds or request_metadata.duration_seconds,
+        codec=probed_metadata.codec or request_metadata.codec,
+    )
+
+
+def merge_image_metadata(
+    *,
+    request_metadata: ImageMetadata,
+    probed_metadata: ImageMetadata,
+) -> ImageMetadata:
+    return ImageMetadata(
+        width=probed_metadata.width or request_metadata.width,
+        height=probed_metadata.height or request_metadata.height,
+    )
+
+
+def media_level_shot(request: IngestionRequested) -> DetectedShot:
+    return DetectedShot(
+        shot_id=f"{request.media_id}:{request.kind.value.lower()}",
+        media_id=request.media_id,
+        shot_index=0,
+        start_seconds=0.0,
+        end_seconds=request.duration_seconds or 0.0,
+        duration_seconds=request.duration_seconds or 0.0,
+    )
+
+
+def media_image_frame(request: IngestionRequested, image_path: Path) -> SampledFrame:
+    return SampledFrame(
+        shot=media_level_shot(request),
+        timestamp_seconds=0.0,
+        path=image_path,
     )

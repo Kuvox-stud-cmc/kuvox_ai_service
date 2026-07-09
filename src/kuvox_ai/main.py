@@ -35,8 +35,7 @@ from kuvox_ai.infrastructure import (
 from kuvox_ai.infrastructure.rabbitmq_client import retry_attempt
 from kuvox_ai.logging import configure_logging, get_logger
 from kuvox_ai.modules.ingestion import IngestionService
-from kuvox_ai.modules.media_optimization import ffmpeg
-from kuvox_ai.modules.media_optimization import MediaOptimizationService
+from kuvox_ai.modules.media_optimization import MediaOptimizationService, ffmpeg
 from kuvox_ai.modules.planning import PlanningService
 from kuvox_ai.modules.rendering import RenderingService
 from kuvox_ai.modules.retrieval import RetrievalService
@@ -96,6 +95,10 @@ def _build_state(settings: Settings) -> AppState:
             transcript_collection_name=settings.transcript_collection_name,
             audio_collection_name=settings.audio_collection_name,
             ocr_collection_name=settings.ocr_collection_name,
+            media_visual_collection_name=settings.media_visual_collection_name,
+            media_audio_collection_name=settings.media_audio_collection_name,
+            media_transcript_collection_name=settings.media_transcript_collection_name,
+            media_ocr_collection_name=settings.media_ocr_collection_name,
             text_embedding_model_name=settings.text_embedding_model_name,
             text_embedding_dim=settings.text_embedding_dim,
             text_embedding_device=settings.text_embedding_device,

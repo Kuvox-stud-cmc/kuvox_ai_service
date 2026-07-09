@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from kuvox_ai.infrastructure import KuzuClient
-from kuvox_ai.modules.ingestion.models import DetectedShot, IngestionRequested, VideoMetadata
+from kuvox_ai.modules.ingestion.models import (
+    AudioMetadata,
+    DetectedShot,
+    ImageMetadata,
+    IngestionRequested,
+    VideoMetadata,
+)
 
 
 class KuzuIngestionWriter:
@@ -41,6 +47,34 @@ class KuzuIngestionWriter:
             )
             """
         )
+        await self._kuzu.execute(
+            """
+            CREATE NODE TABLE IF NOT EXISTS Audio(
+                media_id STRING,
+                owner_id STRING,
+                owner_kind STRING,
+                kind STRING,
+                canonical_object_key STRING,
+                duration_seconds DOUBLE,
+                codec STRING,
+                PRIMARY KEY(media_id)
+            )
+            """
+        )
+        await self._kuzu.execute(
+            """
+            CREATE NODE TABLE IF NOT EXISTS Image(
+                media_id STRING,
+                owner_id STRING,
+                owner_kind STRING,
+                kind STRING,
+                canonical_object_key STRING,
+                width INT64,
+                height INT64,
+                PRIMARY KEY(media_id)
+            )
+            """
+        )
         await self._kuzu.execute("CREATE REL TABLE IF NOT EXISTS BELONGS_TO(FROM Shot TO Video)")
         await self._kuzu.execute("CREATE REL TABLE IF NOT EXISTS NEXT(FROM Shot TO Shot)")
 
@@ -73,6 +107,52 @@ class KuzuIngestionWriter:
                     {"previous_shot_id": previous.shot_id, "shot_id": shot.shot_id},
                 )
             previous = shot
+
+    async def write_audio(self, request: IngestionRequested, metadata: AudioMetadata) -> None:
+        await self.ensure_schema()
+        await self._kuzu.execute(
+            """
+            MERGE (a:Audio {media_id: $media_id})
+            SET a.owner_id = $owner_id,
+                a.owner_kind = $owner_kind,
+                a.kind = $kind,
+                a.canonical_object_key = $canonical_object_key,
+                a.duration_seconds = $duration_seconds,
+                a.codec = $codec
+            """,
+            {
+                "media_id": request.media_id,
+                "owner_id": request.owner_id,
+                "owner_kind": request.owner_kind.value,
+                "kind": request.kind.value,
+                "canonical_object_key": request.canonical.object_key,
+                "duration_seconds": metadata.duration_seconds,
+                "codec": metadata.codec,
+            },
+        )
+
+    async def write_image(self, request: IngestionRequested, metadata: ImageMetadata) -> None:
+        await self.ensure_schema()
+        await self._kuzu.execute(
+            """
+            MERGE (i:Image {media_id: $media_id})
+            SET i.owner_id = $owner_id,
+                i.owner_kind = $owner_kind,
+                i.kind = $kind,
+                i.canonical_object_key = $canonical_object_key,
+                i.width = $width,
+                i.height = $height
+            """,
+            {
+                "media_id": request.media_id,
+                "owner_id": request.owner_id,
+                "owner_kind": request.owner_kind.value,
+                "kind": request.kind.value,
+                "canonical_object_key": request.canonical.object_key,
+                "width": metadata.width,
+                "height": metadata.height,
+            },
+        )
 
     async def _delete_existing_shots(self, media_id: str) -> None:
         await self._kuzu.execute(

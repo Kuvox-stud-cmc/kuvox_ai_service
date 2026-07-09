@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from kuvox_ai.config import Settings
 from kuvox_ai.infrastructure.object_storage_client import ObjectStorageClient
+from kuvox_ai.infrastructure.qdrant_client import QdrantClient
 
 
 def test_settings_require_s3_credentials() -> None:
@@ -48,3 +49,36 @@ def test_object_storage_client_from_settings_uses_configured_credentials_and_no_
     assert client._access_key == "kuvox-ai-dev"
     assert client._secret_key == "secret"
     assert client._create_bucket is False
+
+
+def test_qdrant_blank_api_key_stays_http_for_local_dev() -> None:
+    settings = Settings(
+        qdrant_host="localhost",
+        qdrant_port=6333,
+        qdrant_api_key="",
+        qdrant_https=False,
+        s3_access_key="kuvox-ai-dev",
+        s3_secret_key="secret",
+    )
+
+    client = QdrantClient.from_settings(settings)
+
+    assert settings.qdrant_api_key is None
+    assert client._api_key is None
+    assert client._https is False
+
+
+def test_qdrant_https_can_be_enabled_for_hosted_endpoint() -> None:
+    settings = Settings(
+        qdrant_host="example.cloud.qdrant.io",
+        qdrant_port=6333,
+        qdrant_api_key=" hosted-key ",
+        qdrant_https=True,
+        s3_access_key="kuvox-ai-dev",
+        s3_secret_key="secret",
+    )
+
+    client = QdrantClient.from_settings(settings)
+
+    assert client._api_key == "hosted-key"
+    assert client._https is True

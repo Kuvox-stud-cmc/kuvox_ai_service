@@ -1,7 +1,9 @@
 """Public interface of the ingestion module."""
 
 from kuvox_ai.modules.ingestion.models import (
+    AudioMetadata,
     DetectedShot,
+    ImageMetadata,
     IngestionCompleted,
     IngestionFailed,
     IngestionRequested,
@@ -11,7 +13,9 @@ from kuvox_ai.modules.ingestion.models import (
 from kuvox_ai.modules.ingestion.service import IngestionService
 
 __all__ = [
+    "AudioMetadata",
     "DetectedShot",
+    "ImageMetadata",
     "IngestionCompleted",
     "IngestionFailed",
     "IngestionRequested",

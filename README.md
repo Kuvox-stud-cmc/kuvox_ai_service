@@ -50,6 +50,7 @@ Native Linux with Docker-published infra ports:
 
 ```env
 KUVOX_QDRANT_HOST=localhost
+KUVOX_QDRANT_HTTPS=false
 KUVOX_REDIS_URL=redis://localhost:6379/0
 KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@localhost:5672/
 KUVOX_S3_ENDPOINT_URL=http://localhost:8333
@@ -61,6 +62,7 @@ Native macOS uses the same values as Linux:
 
 ```env
 KUVOX_QDRANT_HOST=localhost
+KUVOX_QDRANT_HTTPS=false
 KUVOX_REDIS_URL=redis://localhost:6379/0
 KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@localhost:5672/
 KUVOX_S3_ENDPOINT_URL=http://localhost:8333
@@ -72,6 +74,7 @@ Native Windows with Docker-published infra ports:
 
 ```env
 KUVOX_QDRANT_HOST=localhost
+KUVOX_QDRANT_HTTPS=false
 KUVOX_REDIS_URL=redis://localhost:6379/0
 KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@localhost:5672/
 KUVOX_S3_ENDPOINT_URL=http://localhost:8333
@@ -83,6 +86,7 @@ AI service running inside Docker Compose:
 
 ```env
 KUVOX_QDRANT_HOST=qdrant
+KUVOX_QDRANT_HTTPS=false
 KUVOX_REDIS_URL=redis://redis:6379/0
 KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@rabbitmq:5672/
 KUVOX_S3_ENDPOINT_URL=http://seaweedfs-s3:8333
@@ -93,8 +97,11 @@ KUVOX_INGESTION_WORK_DIR=/tmp/kuvox-ingestion
 Do not use `/tmp/...` scratch paths for native Windows workers; use a writable
 drive path. If using Conda on Windows, start workers from an activated environment
 or ensure `Library/bin` and `Scripts` are on PATH so native tools such as `ffprobe`
-can be found. For production, inject secrets as real environment variables or via a
-secret manager rather than committing `.env` files.
+can be found. Local Qdrant runs over plain HTTP; keep `KUVOX_QDRANT_HTTPS=false`
+unless you are connecting to a TLS-enabled hosted Qdrant endpoint. Blank
+`KUVOX_QDRANT_API_KEY` values are treated as unset. For production, inject
+secrets as real environment variables or via a secret manager rather than
+committing `.env` files.
 
 Then:
 

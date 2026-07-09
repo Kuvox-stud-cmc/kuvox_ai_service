@@ -15,6 +15,7 @@ from kuvox_ai.modules.ingestion.qdrant_writer import (
     QdrantShotEmbeddingWriter,
     QdrantShotVisualWriter,
     ShotVectorPoint,
+    qdrant_point_id,
 )
 
 
@@ -108,12 +109,13 @@ async def test_qdrant_writer_creates_collection_deletes_media_and_upserts_points
     assert native.upserted[0]["collection_name"] == "shots_visual"
     points = native.upserted[0]["points"]
     assert isinstance(points, list)
-    assert points[0].id == "media-1:shot:000000"
+    assert points[0].id == qdrant_point_id("media-1:shot:000000")
     assert points[0].vector == [0.1, 0.2]
     assert points[0].payload == {
         "mediaId": "media-1",
         "ownerId": "owner-1",
         "ownerKind": "User",
+        "pointId": "media-1:shot:000000",
         "shotId": "media-1:shot:000000",
         "shotIndex": 0,
         "startSeconds": 1.0,
@@ -192,5 +194,21 @@ async def test_generic_qdrant_writer_upserts_points() -> None:
     assert native.deleted[0]["collection_name"] == "shots_transcript"
     points = native.upserted[0]["points"]
     assert isinstance(points, list)
-    assert points[0].id == "media-1:shot:000000"
-    assert points[0].payload == {"mediaId": "media-1", "modality": "transcript"}
+    assert points[0].id == qdrant_point_id("media-1:shot:000000")
+    assert points[0].payload == {
+        "mediaId": "media-1",
+        "modality": "transcript",
+        "pointId": "media-1:shot:000000",
+    }
+
+
+def test_qdrant_point_id_preserves_uuid_and_maps_logical_ids() -> None:
+    uuid_id = "1b2db0ae-4984-4476-a057-1c68fdc40f77"
+
+    assert qdrant_point_id(uuid_id) == uuid_id
+    assert qdrant_point_id("1b2db0ae-4984-4476-a057-1c68fdc40f77:audio") == (
+        qdrant_point_id("1b2db0ae-4984-4476-a057-1c68fdc40f77:audio")
+    )
+    assert qdrant_point_id("1b2db0ae-4984-4476-a057-1c68fdc40f77:audio") != (
+        "1b2db0ae-4984-4476-a057-1c68fdc40f77:audio"
+    )

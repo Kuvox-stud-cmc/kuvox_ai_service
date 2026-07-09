@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_api_key: str | None = None
+    qdrant_https: bool = False
 
     # --- Redis -----------------------------------------------------------
     redis_url: str = "redis://localhost:6379/0"
@@ -105,6 +106,10 @@ class Settings(BaseSettings):
     transcript_collection_name: str = "shots_transcript"
     audio_collection_name: str = "shots_audio"
     ocr_collection_name: str = "shots_ocr"
+    media_visual_collection_name: str = "media_visual"
+    media_audio_collection_name: str = "media_audio"
+    media_transcript_collection_name: str = "media_transcript"
+    media_ocr_collection_name: str = "media_ocr"
     text_embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
     text_embedding_dim: int = 384
     text_embedding_device: str = "auto"
@@ -169,6 +174,13 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.environment == "development"
+
+    @model_validator(mode="after")
+    def normalize_optional_secrets(self) -> Settings:
+        if self.qdrant_api_key is not None and not self.qdrant_api_key.strip():
+            self.qdrant_api_key = None
+
+        return self
 
     @model_validator(mode="after")
     def validate_storage_credentials(self) -> Settings:

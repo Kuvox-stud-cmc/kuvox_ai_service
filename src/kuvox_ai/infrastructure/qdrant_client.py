@@ -13,10 +13,11 @@ logger = get_logger(__name__)
 class QdrantClient:
     """Connection holder for Qdrant. Wraps the native ``AsyncQdrantClient``."""
 
-    def __init__(self, host: str, port: int, api_key: str | None) -> None:
+    def __init__(self, host: str, port: int, api_key: str | None, https: bool) -> None:
         self._host = host
         self._port = port
-        self._api_key = api_key
+        self._api_key = api_key.strip() if api_key and api_key.strip() else None
+        self._https = https
         self._client: AsyncQdrantClient | None = None
 
     @classmethod
@@ -25,6 +26,7 @@ class QdrantClient:
             host=settings.qdrant_host,
             port=settings.qdrant_port,
             api_key=settings.qdrant_api_key,
+            https=settings.qdrant_https,
         )
 
     @property
@@ -34,11 +36,18 @@ class QdrantClient:
         return self._client
 
     async def connect(self) -> None:
-        logger.info("qdrant.connecting", host=self._host, port=self._port)
+        logger.info(
+            "qdrant.connecting",
+            host=self._host,
+            port=self._port,
+            scheme="https" if self._https else "http",
+            api_key_configured=self._api_key is not None,
+        )
         self._client = AsyncQdrantClient(
             host=self._host,
             port=self._port,
             api_key=self._api_key,
+            https=self._https,
         )
         logger.info("qdrant.connected")
 

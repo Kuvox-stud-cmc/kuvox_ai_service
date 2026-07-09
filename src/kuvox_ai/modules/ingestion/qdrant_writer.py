@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Protocol
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from qdrant_client import models
 
@@ -67,9 +68,9 @@ class QdrantShotEmbeddingWriter:
 
         points = [
             models.PointStruct(
-                id=point.point_id,
+                id=qdrant_point_id(point.point_id),
                 vector=point.vector,
-                payload=point.payload,
+                payload=payload_with_logical_point_id(point),
             )
             for point in points
         ]
@@ -197,3 +198,16 @@ def _field(value: Any, name: str) -> Any:
     if isinstance(value, dict):
         return value.get(name)
     return getattr(value, name, None)
+
+
+def qdrant_point_id(logical_point_id: str) -> str:
+    try:
+        return str(UUID(logical_point_id))
+    except ValueError:
+        return str(uuid5(NAMESPACE_URL, f"kuvox:qdrant:{logical_point_id}"))
+
+
+def payload_with_logical_point_id(point: ShotVectorPoint) -> dict[str, object]:
+    if "pointId" in point.payload:
+        return point.payload
+    return {**point.payload, "pointId": point.point_id}

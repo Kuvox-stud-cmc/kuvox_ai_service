@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from kuvox_ai.modules.ingestion.audio import ShotAudioClip
-from kuvox_ai.modules.ingestion.models import DetectedShot, IngestionRequested
+from kuvox_ai.modules.ingestion.models import (
+    AudioMetadata,
+    DetectedShot,
+    ImageMetadata,
+    IngestionRequested,
+)
 from kuvox_ai.modules.ingestion.ocr import ShotOcrText
 from kuvox_ai.modules.ingestion.qdrant_writer import ShotVectorPoint
 from kuvox_ai.modules.ingestion.transcript import ShotTranscript
@@ -79,6 +84,76 @@ def audio_points(
     ]
 
 
+def image_visual_point(
+    request: IngestionRequested,
+    metadata: ImageMetadata,
+    embedding: list[float],
+) -> ShotVectorPoint:
+    return ShotVectorPoint(
+        point_id=f"{request.media_id}:image",
+        vector=embedding,
+        payload={
+            **media_payload(request, "visual"),
+            "width": metadata.width,
+            "height": metadata.height,
+        },
+    )
+
+
+def image_ocr_point(
+    request: IngestionRequested,
+    text: str,
+    embedding: list[float],
+    *,
+    text_block_count: int,
+    mean_confidence: float | None,
+) -> ShotVectorPoint:
+    return ShotVectorPoint(
+        point_id=f"{request.media_id}:ocr",
+        vector=embedding,
+        payload={
+            **media_payload(request, "ocr"),
+            "text": text,
+            "textBlockCount": text_block_count,
+            "meanConfidence": mean_confidence,
+        },
+    )
+
+
+def audio_media_point(
+    request: IngestionRequested,
+    metadata: AudioMetadata,
+    embedding: list[float],
+) -> ShotVectorPoint:
+    return ShotVectorPoint(
+        point_id=f"{request.media_id}:audio",
+        vector=embedding,
+        payload={
+            **media_payload(request, "audio"),
+            "durationSeconds": metadata.duration_seconds,
+            "codec": metadata.codec,
+        },
+    )
+
+
+def audio_transcript_point(
+    request: IngestionRequested,
+    text: str,
+    embedding: list[float],
+    *,
+    segment_count: int,
+) -> ShotVectorPoint:
+    return ShotVectorPoint(
+        point_id=f"{request.media_id}:transcript",
+        vector=embedding,
+        payload={
+            **media_payload(request, "transcript"),
+            "text": text,
+            "segmentCount": segment_count,
+        },
+    )
+
+
 def common_payload(
     request: IngestionRequested,
     shot: DetectedShot,
@@ -93,5 +168,17 @@ def common_payload(
         "startSeconds": shot.start_seconds,
         "endSeconds": shot.end_seconds,
         "durationSeconds": shot.duration_seconds,
+        "modality": modality,
+    }
+
+
+def media_payload(request: IngestionRequested, modality: str) -> dict[str, object]:
+    return {
+        "mediaId": request.media_id,
+        "ownerId": request.owner_id,
+        "ownerKind": request.owner_kind.value,
+        "kind": request.kind.value,
+        "canonicalObjectKey": request.canonical.object_key,
+        "contentType": request.canonical.content_type,
         "modality": modality,
     }

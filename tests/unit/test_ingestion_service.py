@@ -11,7 +11,13 @@ import kuvox_ai.modules.ingestion.service as service_module
 from kuvox_ai.modules.ingestion import IngestionService
 from kuvox_ai.modules.ingestion.audio import ShotAudioClip
 from kuvox_ai.modules.ingestion.frame_sampler import SampledFrame
-from kuvox_ai.modules.ingestion.models import DetectedShot, IngestionRequested, VideoMetadata
+from kuvox_ai.modules.ingestion.models import (
+    AudioMetadata,
+    DetectedShot,
+    ImageMetadata,
+    IngestionRequested,
+    VideoMetadata,
+)
 from kuvox_ai.modules.ingestion.ocr import ShotOcrText
 from kuvox_ai.modules.ingestion.transcript import TranscriptSegment
 
@@ -37,6 +43,50 @@ def requested_payload() -> dict[str, object]:
         "frameRate": 30.0,
         "codec": "h265",
     }
+
+
+def audio_requested_payload() -> dict[str, object]:
+    payload = requested_payload()
+    payload.update(
+        {
+            "mediaId": "audio-1",
+            "kind": "Audio",
+            "canonical": {
+                "bucketName": "kuvox-canonical",
+                "objectKey": "media/audio-1/canonical.opus",
+                "contentType": "audio/opus",
+                "sizeBytes": 123,
+            },
+            "durationSeconds": 7.5,
+            "width": None,
+            "height": None,
+            "frameRate": None,
+            "codec": "opus",
+        }
+    )
+    return payload
+
+
+def image_requested_payload() -> dict[str, object]:
+    payload = requested_payload()
+    payload.update(
+        {
+            "mediaId": "image-1",
+            "kind": "Image",
+            "canonical": {
+                "bucketName": "kuvox-canonical",
+                "objectKey": "media/image-1/canonical.webp",
+                "contentType": "image/webp",
+                "sizeBytes": 234,
+            },
+            "durationSeconds": None,
+            "width": 1024,
+            "height": 768,
+            "frameRate": None,
+            "codec": None,
+        }
+    )
+    return payload
 
 
 async def test_ingest_downloads_canonical_detects_shots_and_writes_graph(
@@ -352,3 +402,202 @@ async def test_ingest_no_audio_deletes_transcript_audio_points_and_indexes_ocr(
     transcriber.transcribe.assert_not_awaited()
     audio_encoder.encode_audio_clips.assert_not_awaited()
     ocr_writer.write_points.assert_awaited_once()
+
+
+async def test_ingest_audio_writes_audio_graph_and_media_indexes(
+    mock_kuzu: AsyncMock,
+    mock_storage: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = IngestionRequested.model_validate(audio_requested_payload())
+    writer = AsyncMock()
+    audio_encoder = AsyncMock()
+    transcriber = AsyncMock()
+    text_encoder = AsyncMock()
+    media_audio_writer = AsyncMock()
+    media_transcript_writer = AsyncMock()
+
+    monkeypatch.setattr(
+        service_module,
+        "probe_audio_metadata",
+        AsyncMock(return_value=AudioMetadata(duration_seconds=8.0, codec="opus")),
+    )
+    audio_encoder.encode_audio_clips.return_value = [[0.3] * 1024]
+    transcriber.transcribe.return_value = [
+        TranscriptSegment(start_seconds=0.0, end_seconds=4.0, text="hello"),
+        TranscriptSegment(start_seconds=4.0, end_seconds=8.0, text="world"),
+    ]
+    text_encoder.encode_texts.return_value = [[0.1] * 384]
+
+    svc = IngestionService(
+        kuzu=mock_kuzu,
+        storage=mock_storage,
+        work_dir=tmp_path,
+        writer=writer,
+        audio_encoder=audio_encoder,
+        transcriber=transcriber,
+        text_encoder=text_encoder,
+        media_audio_writer=media_audio_writer,
+        media_transcript_writer=media_transcript_writer,
+    )
+
+    result = await svc.ingest(request)
+
+    mock_storage.download_file.assert_awaited_once()
+    writer.write_audio.assert_awaited_once()
+    audio_encoder.encode_audio_clips.assert_awaited_once()
+    media_audio_writer.write_points.assert_awaited_once()
+    audio_points = media_audio_writer.write_points.await_args.args[1]
+    assert audio_points[0].point_id == "audio-1:audio"
+    assert audio_points[0].payload["mediaId"] == "audio-1"
+    assert audio_points[0].payload["modality"] == "audio"
+    media_transcript_writer.write_points.assert_awaited_once()
+    transcript_points = media_transcript_writer.write_points.await_args.args[1]
+    assert transcript_points[0].point_id == "audio-1:transcript"
+    assert transcript_points[0].payload["text"] == "hello world"
+    assert result.shot_count == 0
+    assert result.audio_count == 1
+    assert result.transcript_count == 1
+
+
+async def test_ingest_audio_optional_transcript_failure_still_completes(
+    mock_kuzu: AsyncMock,
+    mock_storage: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = IngestionRequested.model_validate(audio_requested_payload())
+    writer = AsyncMock()
+    audio_encoder = AsyncMock()
+    transcriber = AsyncMock()
+    media_audio_writer = AsyncMock()
+    media_transcript_writer = AsyncMock()
+
+    monkeypatch.setattr(
+        service_module,
+        "probe_audio_metadata",
+        AsyncMock(return_value=AudioMetadata(duration_seconds=8.0, codec="opus")),
+    )
+    audio_encoder.encode_audio_clips.return_value = [[0.3] * 1024]
+    transcriber.transcribe.side_effect = RuntimeError("whisper unavailable")
+
+    svc = IngestionService(
+        kuzu=mock_kuzu,
+        storage=mock_storage,
+        work_dir=tmp_path,
+        writer=writer,
+        audio_encoder=audio_encoder,
+        transcriber=transcriber,
+        media_audio_writer=media_audio_writer,
+        media_transcript_writer=media_transcript_writer,
+    )
+
+    result = await svc.ingest(request)
+
+    writer.write_audio.assert_awaited_once()
+    media_audio_writer.write_points.assert_awaited_once()
+    media_transcript_writer.write_points.assert_not_awaited()
+    assert result.audio_count == 1
+    assert result.transcript_count == 0
+
+
+async def test_ingest_image_writes_image_graph_and_media_indexes(
+    mock_kuzu: AsyncMock,
+    mock_storage: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = IngestionRequested.model_validate(image_requested_payload())
+    writer = AsyncMock()
+    visual_encoder = AsyncMock()
+    ocr_reader = AsyncMock()
+    text_encoder = AsyncMock()
+    media_visual_writer = AsyncMock()
+    media_ocr_writer = AsyncMock()
+
+    monkeypatch.setattr(
+        service_module,
+        "probe_image_metadata",
+        AsyncMock(return_value=ImageMetadata(width=640, height=480)),
+    )
+    visual_encoder.encode_frames.return_value = [[0.4] * 512]
+    ocr_reader.read_frames.return_value = [
+        ShotOcrText(
+            shot=service_module.media_level_shot(request),
+            text="sale sign",
+            frame_timestamp_seconds=0.0,
+            text_block_count=2,
+            mean_confidence=0.75,
+        )
+    ]
+    text_encoder.encode_texts.return_value = [[0.2] * 384]
+
+    svc = IngestionService(
+        kuzu=mock_kuzu,
+        storage=mock_storage,
+        work_dir=tmp_path,
+        writer=writer,
+        visual_encoder=visual_encoder,
+        ocr_reader=ocr_reader,
+        text_encoder=text_encoder,
+        media_visual_writer=media_visual_writer,
+        media_ocr_writer=media_ocr_writer,
+    )
+
+    result = await svc.ingest(request)
+
+    writer.write_image.assert_awaited_once()
+    visual_encoder.encode_frames.assert_awaited_once()
+    media_visual_writer.write_points.assert_awaited_once()
+    visual_points = media_visual_writer.write_points.await_args.args[1]
+    assert visual_points[0].point_id == "image-1:image"
+    assert visual_points[0].payload["width"] == 640
+    media_ocr_writer.write_points.assert_awaited_once()
+    ocr_points = media_ocr_writer.write_points.await_args.args[1]
+    assert ocr_points[0].point_id == "image-1:ocr"
+    assert ocr_points[0].payload["text"] == "sale sign"
+    assert result.shot_count == 0
+    assert result.visual_count == 1
+    assert result.ocr_count == 1
+
+
+async def test_ingest_image_optional_ocr_failure_still_completes(
+    mock_kuzu: AsyncMock,
+    mock_storage: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = IngestionRequested.model_validate(image_requested_payload())
+    writer = AsyncMock()
+    visual_encoder = AsyncMock()
+    ocr_reader = AsyncMock()
+    media_visual_writer = AsyncMock()
+    media_ocr_writer = AsyncMock()
+
+    monkeypatch.setattr(
+        service_module,
+        "probe_image_metadata",
+        AsyncMock(return_value=ImageMetadata(width=640, height=480)),
+    )
+    visual_encoder.encode_frames.return_value = [[0.4] * 512]
+    ocr_reader.read_frames.side_effect = RuntimeError("ocr unavailable")
+
+    svc = IngestionService(
+        kuzu=mock_kuzu,
+        storage=mock_storage,
+        work_dir=tmp_path,
+        writer=writer,
+        visual_encoder=visual_encoder,
+        ocr_reader=ocr_reader,
+        media_visual_writer=media_visual_writer,
+        media_ocr_writer=media_ocr_writer,
+    )
+
+    result = await svc.ingest(request)
+
+    writer.write_image.assert_awaited_once()
+    media_visual_writer.write_points.assert_awaited_once()
+    media_ocr_writer.write_points.assert_not_awaited()
+    assert result.visual_count == 1
+    assert result.ocr_count == 0
