@@ -225,7 +225,35 @@ async def _start_workers(state: AppState, settings: Settings) -> None:
         prefetch_count=settings.ingestion_concurrency,
     )
 
-    await state.rabbitmq.consume(settings.queue_rendering, rendering_worker.handle_message)
+    await state.rabbitmq.declare_retry_topology(
+        settings.rendering_requested_queue,
+        settings.rendering_requested_routing_key,
+        settings.rabbitmq_retry_delay_list,
+    )
+
+    async def handle_rendering(message: AbstractIncomingMessage) -> None:
+        async with message.process(requeue=True):
+            headers = dict(message.headers or {})
+            await rendering_worker.handle_message_body(
+                message.body,
+                service=state.rendering,
+                rabbitmq=state.rabbitmq,
+                started_routing_key=settings.rendering_started_routing_key,
+                completed_routing_key=settings.rendering_completed_routing_key,
+                failed_routing_key=settings.rendering_failed_routing_key,
+                queue_name=settings.rendering_requested_queue,
+                retry_attempt=retry_attempt(headers),
+                max_retry_attempts=settings.rabbitmq_retry_attempts,
+                headers=headers,
+            )
+
+    await state.rabbitmq.consume_bound_queue(
+        settings.rendering_requested_queue,
+        settings.rendering_requested_routing_key,
+        handle_rendering,
+        prefetch_count=settings.rendering_concurrency,
+    )
+
     await state.rabbitmq.consume(settings.queue_sandbox, sandbox_worker.handle_message)
     logger.info("app.workers.started")
 

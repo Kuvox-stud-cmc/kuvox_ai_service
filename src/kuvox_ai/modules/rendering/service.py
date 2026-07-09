@@ -27,7 +27,8 @@ class RenderingService:
         """
         logger.info(
             "rendering.render.start",
-            job_id=str(job.job_id),
+            render_job_id=job.render_job_id,
             n_operations=len(job.plan.operations),
+            n_media_sources=len(job.media_sources),
         )
         raise NotImplementedError("RenderingService.render is not implemented yet")

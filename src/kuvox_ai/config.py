@@ -58,8 +58,13 @@ class Settings(BaseSettings):
     rabbitmq_exchange: str = "kuvox.events"
     rabbitmq_retry_delays_seconds: str = "30,120,600"
     rabbitmq_retry_attempts: int = 3
-    queue_rendering: str = "kuvox.rendering"
     queue_sandbox: str = "kuvox.sandbox"
+    rendering_requested_queue: str = "kuvox.rendering"
+    rendering_requested_routing_key: str = "kuvox.rendering"
+    rendering_started_routing_key: str = "rendering.started"
+    rendering_completed_routing_key: str = "rendering.completed"
+    rendering_failed_routing_key: str = "rendering.failed"
+    rendering_concurrency: int = 1
     media_optimization_requested_queue: str = "media.optimization.requested"
     media_optimization_requested_routing_key: str = "media.optimization.requested"
     media_optimization_completed_routing_key: str = "media.optimization.completed"

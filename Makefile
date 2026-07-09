@@ -11,7 +11,7 @@ endif
 PIP := $(VENV_BIN)/pip
 PY := $(VENV_BIN)/python
 
-.PHONY: help install dev dev-api test lint typecheck format worker-media-optimization worker-ingestion worker-rendering worker-sandbox worker-media up down clean
+.PHONY: help install dev dev-api test lint typecheck format worker-media-optimization worker-ingestion worker-sandbox worker-media up down clean
 
 help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "Targets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -46,9 +46,6 @@ worker-media-optimization: ## Run the media optimization worker.
 
 worker-ingestion: ## Run the ingestion worker.
 	$(PY) -m kuvox_ai.workers.ingestion_worker
-
-worker-rendering: ## Run the rendering worker.
-	$(PY) -m kuvox_ai.workers.rendering_worker
 
 worker-sandbox: ## Run the sandbox worker.
 	$(PY) -m kuvox_ai.workers.sandbox_worker
