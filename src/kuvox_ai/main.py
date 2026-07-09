@@ -35,6 +35,7 @@ from kuvox_ai.infrastructure import (
 from kuvox_ai.infrastructure.rabbitmq_client import retry_attempt
 from kuvox_ai.logging import configure_logging, get_logger
 from kuvox_ai.modules.ingestion import IngestionService
+from kuvox_ai.modules.media_optimization import ffmpeg
 from kuvox_ai.modules.media_optimization import MediaOptimizationService
 from kuvox_ai.modules.planning import PlanningService
 from kuvox_ai.modules.rendering import RenderingService
@@ -168,6 +169,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 async def _start_workers(state: AppState, settings: Settings) -> None:
     """Register RabbitMQ worker consumers in the FastAPI process."""
     logger = get_logger(__name__)
+    try:
+        logger.info(
+            "media_optimization_worker.ffmpeg_resolved",
+            ffmpeg=ffmpeg.resolve_ffmpeg_exe(),
+            ffprobe=ffmpeg.resolve_ffprobe_exe(),
+            work_dir=str(settings.media_work_dir),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("media_optimization_worker.ffmpeg_resolution_failed", error=str(exc))
 
     await state.rabbitmq.declare_retry_topology(
         settings.media_optimization_requested_queue,

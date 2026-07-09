@@ -79,7 +79,9 @@ class RenderingStarted(BaseModel):
 
 class RenderingCompleted(BaseModel):
     event_id: str = Field(alias="eventId")
-    event_type: Literal["rendering.completed"] = Field(default="rendering.completed", alias="eventType")
+    event_type: Literal["rendering.completed"] = Field(
+        default="rendering.completed", alias="eventType"
+    )
     occurred_at: datetime = Field(alias="occurredAt")
     source_event_id: str = Field(alias="sourceEventId")
     render_job_id: str = Field(alias="renderJobId")

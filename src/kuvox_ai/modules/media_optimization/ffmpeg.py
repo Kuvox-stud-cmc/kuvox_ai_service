@@ -7,6 +7,7 @@ import importlib
 import json
 import shutil
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -19,20 +20,47 @@ class _ImageioFfmpegModule(Protocol):
     def get_ffmpeg_exe(self) -> str: ...
 
 
+@lru_cache(maxsize=1)
 def resolve_ffmpeg_exe() -> str:
     path = shutil.which("ffmpeg")
-    if path:
+    if path and _ffmpeg_candidate_works(path):
         return path
 
+    imageio_path = _resolve_imageio_ffmpeg_exe()
+    if imageio_path:
+        return imageio_path
+
+    if path:
+        raise FfmpegError(f"FFmpeg executable on PATH is not usable: {path}")
+
+    raise FfmpegError("FFmpeg executable not found on PATH.")
+
+
+def _resolve_imageio_ffmpeg_exe() -> str | None:
     try:
         imageio_ffmpeg = cast(
             _ImageioFfmpegModule,
             importlib.import_module("imageio_ffmpeg"),
         )
-    except ImportError as exc:
-        raise FfmpegError("FFmpeg executable not found on PATH.") from exc
+    except ImportError:
+        return None
 
     return imageio_ffmpeg.get_ffmpeg_exe()
+
+
+def _ffmpeg_candidate_works(path: str) -> bool:
+    try:
+        result = subprocess.run(
+            [path, "-version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+    return result.returncode == 0
 
 
 def resolve_ffprobe_exe() -> str:
@@ -68,7 +96,13 @@ async def run_command(args: list[str], timeout_seconds: int = 900) -> None:
             raise FfmpegError(str(exc)) from exc
 
         if result.returncode != 0:
-            raise FfmpegError(result.stderr.decode("utf-8", errors="ignore"))
+            stderr = result.stderr.decode("utf-8", errors="ignore").strip()
+            stdout = result.stdout.decode("utf-8", errors="ignore").strip()
+            details = stderr or stdout or "FFmpeg produced no stderr/stdout."
+            command = " ".join(str(part) for part in resolved_args)
+            raise FfmpegError(
+                f"FFmpeg command failed with exit code {result.returncode}: {command}\n{details}"
+            )
 
     await asyncio.to_thread(_run)
 

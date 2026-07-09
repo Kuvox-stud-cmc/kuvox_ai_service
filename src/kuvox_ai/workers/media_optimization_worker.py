@@ -15,6 +15,7 @@ from kuvox_ai.config import Settings, get_settings
 from kuvox_ai.infrastructure.object_storage_client import ObjectStorageClient
 from kuvox_ai.infrastructure.rabbitmq_client import RabbitMQClient, retry_attempt
 from kuvox_ai.logging import configure_logging, get_logger
+from kuvox_ai.modules.media_optimization import ffmpeg
 from kuvox_ai.modules.media_optimization import (
     MediaOptimizationFailed,
     MediaOptimizationRequested,
@@ -127,6 +128,15 @@ async def run_async() -> None:
         queue=settings.media_optimization_requested_queue,
         routing_key=settings.media_optimization_requested_routing_key,
     )
+    try:
+        logger.info(
+            "media_optimization_worker.ffmpeg_resolved",
+            ffmpeg=ffmpeg.resolve_ffmpeg_exe(),
+            ffprobe=ffmpeg.resolve_ffprobe_exe(),
+            work_dir=str(settings.media_work_dir),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("media_optimization_worker.ffmpeg_resolution_failed", error=str(exc))
 
     storage = ObjectStorageClient.from_settings(settings)
     rabbitmq = RabbitMQClient.from_settings(settings)

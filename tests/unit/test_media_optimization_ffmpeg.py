@@ -13,6 +13,7 @@ def test_resolve_ffprobe_uses_sibling_binary_when_path_is_missing(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
+    ffmpeg.resolve_ffmpeg_exe.cache_clear()
     binary_dir = tmp_path / "bin"
     binary_dir.mkdir()
     ffmpeg_exe = binary_dir / "ffmpeg.exe"
@@ -30,6 +31,29 @@ def test_resolve_ffprobe_uses_sibling_binary_when_path_is_missing(
     )
 
     assert ffmpeg.resolve_ffprobe_exe() == str(ffprobe_exe)
+    ffmpeg.resolve_ffmpeg_exe.cache_clear()
+
+
+def test_resolve_ffmpeg_falls_back_when_path_binary_crashes(monkeypatch: Any) -> None:
+    ffmpeg.resolve_ffmpeg_exe.cache_clear()
+
+    monkeypatch.setattr(
+        "kuvox_ai.modules.media_optimization.ffmpeg.shutil.which",
+        lambda name: "broken-ffmpeg" if name == "ffmpeg" else None,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "imageio_ffmpeg",
+        SimpleNamespace(get_ffmpeg_exe=lambda: "fallback-ffmpeg"),
+    )
+
+    def fake_run(args: list[str], **_: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args=args, returncode=3221225785)
+
+    monkeypatch.setattr("kuvox_ai.modules.media_optimization.ffmpeg.subprocess.run", fake_run)
+
+    assert ffmpeg.resolve_ffmpeg_exe() == "fallback-ffmpeg"
+    ffmpeg.resolve_ffmpeg_exe.cache_clear()
 
 
 async def test_ffprobe_json_uses_resolved_ffprobe_binary(monkeypatch: Any, tmp_path: Path) -> None:
