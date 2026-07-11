@@ -122,7 +122,7 @@ def _build_state(settings: Settings) -> AppState:
         media_optimization=media_optimization,
         retrieval=retrieval,
         planning=PlanningService(llm=llm, retrieval=retrieval),
-        rendering=RenderingService(storage=storage),
+        rendering=RenderingService(storage=storage, work_dir=settings.rendering_work_dir),
         sandbox=SandboxService(),
     )
 
