@@ -92,6 +92,7 @@ class Settings(BaseSettings):
 
     # --- Media optimization ----------------------------------------------
     media_work_dir: Path = Path("/tmp/kuvox-media")
+    rendering_work_dir: Path = Path("/tmp/kuvox-rendering")
     media_delete_raw_after_optimization: bool = False
     video_canonical_crf: int = 28
     video_proxy_crf: int = 30
@@ -212,6 +213,7 @@ class Settings(BaseSettings):
         path_settings = {
             "KUVOX_KUZU_DB_PATH": self.kuzu_db_path,
             "KUVOX_MEDIA_WORK_DIR": self.media_work_dir,
+            "KUVOX_RENDERING_WORK_DIR": self.rendering_work_dir,
             "KUVOX_INGESTION_WORK_DIR": self.ingestion_work_dir,
             "KUVOX_MODEL_DIR": self.model_dir,
         }
