@@ -1,0 +1,21 @@
+{
+  "Inter": { "regular": "Inter.ttf", "italic": "Inter-Italic.ttf" },
+  "Roboto": { "regular": "Roboto.ttf", "italic": "Roboto-Italic.ttf" },
+  "Montserrat": { "regular": "Montserrat.ttf", "italic": "Montserrat-Italic.ttf" },
+  "Playfair Display": { "regular": "PlayfairDisplay.ttf", "italic": "PlayfairDisplay-Italic.ttf" },
+  "Outfit": { "regular": "Outfit.ttf" },
+  "Poppins": {
+    "regular": "Poppins-Regular.ttf",
+    "italic": "Poppins-Italic.ttf",
+    "medium": "Poppins-Medium.ttf",
+    "semibold": "Poppins-SemiBold.ttf",
+    "bold": "Poppins-Bold.ttf"
+  },
+  "Syne": { "regular": "Syne.ttf" },
+  "Space Grotesk": { "regular": "SpaceGrotesk.ttf" },
+  "Pacifico": { "regular": "Pacifico-Regular.ttf" },
+  "Bungee": { "regular": "Bungee-Regular.ttf" },
+  "Lora": { "regular": "Lora.ttf", "italic": "Lora-Italic.ttf" },
+  "sans-serif": { "fallback": "Inter" },
+  "serif": { "fallback": "Lora" }
+}

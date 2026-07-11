@@ -20,7 +20,7 @@ def requested_body() -> bytes:
             "revisionNumber": 7,
             "requestedByUserId": "user-1",
             "settings": {"format": "mp4", "width": 1920, "height": 1080},
-            "documentJson": {"media": {}, "tracks": []},
+            "documentJson": {"media": {}, "tracks": [], "snapshotMarker": "revision-7"},
             "mediaSources": [],
             "outputBucketName": "kuvox-renders",
             "outputStorageKey": "renders/job-1.mp4",
@@ -52,6 +52,9 @@ async def test_worker_publishes_started_and_completed_on_success(mock_rabbitmq: 
     assert mock_rabbitmq.publish_json.await_args_list[1].args[0] == "rendering.completed"
     assert mock_rabbitmq.publish_json.await_args_list[1].args[1]["sourceEventId"] == "evt-1"
     assert mock_rabbitmq.publish_json.await_args_list[1].args[1]["outputSizeBytes"] == 123
+    rendered_job = service.render.await_args.args[0]
+    assert rendered_job.revision_number == 7
+    assert rendered_job.document_json["snapshotMarker"] == "revision-7"
 
 
 async def test_worker_schedules_retry_before_terminal_failure(mock_rabbitmq: AsyncMock) -> None:

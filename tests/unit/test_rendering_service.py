@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 import shutil
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from PIL import Image
 
-from kuvox_ai.modules.rendering import RenderingService
-from kuvox_ai.modules.rendering.service import RenderManifestError, build_manifest
-from kuvox_ai.modules.rendering.models import RenderJob
 from kuvox_ai.modules.media_optimization import ffmpeg
+from kuvox_ai.modules.rendering import RenderingService
+from kuvox_ai.modules.rendering.models import RenderJob
+from kuvox_ai.modules.rendering.service import (
+    RenderManifestError,
+    _render_visual_layer,
+    _VideoFrameDecoder,
+    build_manifest,
+    evaluate_animation_track,
+)
+from kuvox_ai.schemas.render_manifest import VideoRenderAnimationTrack
 
 
 async def test_render_image_only_uploads_playable_mp4(mock_storage: AsyncMock, tmp_path: Path) -> None:
@@ -58,6 +67,54 @@ def test_build_manifest_rejects_missing_source_bucket() -> None:
 
     with pytest.raises(RenderManifestError, match="bucket"):
         build_manifest(job)
+
+
+def test_animation_evaluator_matches_typescript_hold_and_easing() -> None:
+    track = VideoRenderAnimationTrack.model_validate({"keyframes": [
+        {"time": 0, "value": 0},
+        {"time": 2, "value": 100, "easing": [0.42, 0, 0.58, 1]},
+    ]})
+    assert evaluate_animation_track(track, -1, 50) == 0
+    assert evaluate_animation_track(track, 1, 50) == pytest.approx(50)
+    assert evaluate_animation_track(track, 2, 50) == 100
+    assert evaluate_animation_track(track, 3, 50) == 100
+
+
+def test_visual_layer_preserves_center_with_independent_scale_crop_and_rotation() -> None:
+    job = render_job()
+    item = build_manifest(job).visual_items[0]
+    item.transform.scale_x = 0.5
+    item.transform.scale_y = 1.25
+    item.transform.rotation = 30
+    item.crop.left = 0.25
+    source = Image.new("RGBA", (320, 180), (255, 0, 0, 128))
+
+    layer, position = _render_visual_layer(source, item, 0, 320, 180)
+
+    assert layer.mode == "RGBA"
+    assert position[0] + layer.width / 2 == pytest.approx(160, abs=1)
+    assert position[1] + layer.height / 2 == pytest.approx(90, abs=1)
+    assert layer.getchannel("A").getextrema()[1] <= 128
+
+
+def test_video_decoder_samples_source_time_at_output_speed(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[str] = []
+
+    def fake_popen(args: list[str], **_kwargs: object) -> SimpleNamespace:
+        captured.extend(args)
+        return SimpleNamespace(
+            stdout=BytesIO(b""), stderr=BytesIO(b""), poll=lambda: 0,
+            terminate=lambda: None, communicate=lambda **_kwargs: (b"", b""), kill=lambda: None,
+        )
+
+    monkeypatch.setattr("kuvox_ai.modules.rendering.service.ffmpeg.resolve_ffmpeg_exe", lambda: "ffmpeg")
+    monkeypatch.setattr("kuvox_ai.modules.rendering.service.subprocess.Popen", fake_popen)
+
+    decoder = _VideoFrameDecoder(Path("source.mp4"), 320, 180, 3.5, 24, 2)
+    decoder.close()
+
+    assert captured[captured.index("-ss") + 1] == "3.500000000"
+    assert "fps=12.000000000" in captured[captured.index("-vf") + 1]
 
 
 def render_job() -> RenderJob:
