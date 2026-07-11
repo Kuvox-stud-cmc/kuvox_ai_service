@@ -483,6 +483,7 @@ async def test_ingest_audio_writes_audio_graph_and_media_indexes(
 ) -> None:
     request = IngestionRequested.model_validate(audio_requested_payload())
     writer = AsyncMock()
+    audio_extractor = AsyncMock()
     audio_encoder = AsyncMock()
     transcriber = AsyncMock()
     text_encoder = AsyncMock()
@@ -495,6 +496,7 @@ async def test_ingest_audio_writes_audio_graph_and_media_indexes(
         AsyncMock(return_value=AudioMetadata(duration_seconds=8.0, codec="opus")),
     )
     audio_encoder.encode_audio_clips.return_value = [[0.3] * 1024]
+    audio_extractor.extract_full_audio.return_value = tmp_path / "audio_embedding" / "full_audio.wav"
     transcriber.transcribe.return_value = [
         TranscriptSegment(start_seconds=0.0, end_seconds=4.0, text="hello"),
         TranscriptSegment(start_seconds=4.0, end_seconds=8.0, text="world"),
@@ -506,6 +508,7 @@ async def test_ingest_audio_writes_audio_graph_and_media_indexes(
         storage=mock_storage,
         work_dir=tmp_path,
         writer=writer,
+        audio_extractor=audio_extractor,
         audio_encoder=audio_encoder,
         transcriber=transcriber,
         text_encoder=text_encoder,
@@ -517,6 +520,7 @@ async def test_ingest_audio_writes_audio_graph_and_media_indexes(
 
     mock_storage.download_file.assert_awaited_once()
     writer.write_audio.assert_awaited_once()
+    audio_extractor.extract_full_audio.assert_awaited_once()
     audio_encoder.encode_audio_clips.assert_awaited_once()
     media_audio_writer.write_points.assert_awaited_once()
     audio_points = media_audio_writer.write_points.await_args.args[1]
@@ -540,6 +544,7 @@ async def test_ingest_audio_optional_transcript_failure_still_completes(
 ) -> None:
     request = IngestionRequested.model_validate(audio_requested_payload())
     writer = AsyncMock()
+    audio_extractor = AsyncMock()
     audio_encoder = AsyncMock()
     transcriber = AsyncMock()
     media_audio_writer = AsyncMock()
@@ -551,6 +556,7 @@ async def test_ingest_audio_optional_transcript_failure_still_completes(
         AsyncMock(return_value=AudioMetadata(duration_seconds=8.0, codec="opus")),
     )
     audio_encoder.encode_audio_clips.return_value = [[0.3] * 1024]
+    audio_extractor.extract_full_audio.return_value = tmp_path / "audio_embedding" / "full_audio.wav"
     transcriber.transcribe.side_effect = RuntimeError("whisper unavailable")
 
     svc = IngestionService(
@@ -558,6 +564,7 @@ async def test_ingest_audio_optional_transcript_failure_still_completes(
         storage=mock_storage,
         work_dir=tmp_path,
         writer=writer,
+        audio_extractor=audio_extractor,
         audio_encoder=audio_encoder,
         transcriber=transcriber,
         media_audio_writer=media_audio_writer,
@@ -570,6 +577,49 @@ async def test_ingest_audio_optional_transcript_failure_still_completes(
     media_audio_writer.write_points.assert_awaited_once()
     media_transcript_writer.write_points.assert_not_awaited()
     assert result.audio_count == 1
+    assert result.transcript_count == 0
+
+
+async def test_ingest_audio_embedding_failure_still_completes(
+    mock_kuzu: AsyncMock,
+    mock_storage: AsyncMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = IngestionRequested.model_validate(audio_requested_payload())
+    writer = AsyncMock()
+    audio_extractor = AsyncMock()
+    audio_encoder = AsyncMock()
+    transcriber = AsyncMock()
+    media_audio_writer = AsyncMock()
+    media_transcript_writer = AsyncMock()
+
+    monkeypatch.setattr(
+        service_module,
+        "probe_audio_metadata",
+        AsyncMock(return_value=AudioMetadata(duration_seconds=8.0, codec="opus")),
+    )
+    audio_extractor.extract_full_audio.return_value = tmp_path / "audio_embedding" / "full_audio.wav"
+    audio_encoder.encode_audio_clips.side_effect = RuntimeError("TorchCodec unavailable")
+    transcriber.transcribe.return_value = []
+
+    svc = IngestionService(
+        kuzu=mock_kuzu,
+        storage=mock_storage,
+        work_dir=tmp_path,
+        writer=writer,
+        audio_extractor=audio_extractor,
+        audio_encoder=audio_encoder,
+        transcriber=transcriber,
+        media_audio_writer=media_audio_writer,
+        media_transcript_writer=media_transcript_writer,
+    )
+
+    result = await svc.ingest(request)
+
+    writer.write_audio.assert_awaited_once()
+    media_audio_writer.write_points.assert_awaited_once_with(request, [])
+    assert result.audio_count == 0
     assert result.transcript_count == 0
 
 

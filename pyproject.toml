@@ -35,8 +35,9 @@ dependencies = [
     "numpy>=1.26,<2.0",
     "opencv-python-headless>=4.10",
     "scenedetect[opencv]>=0.6",
-    "torch>=2.4",
-    "torchvision>=0.19",
+    "torch>=2.4,<2.6",
+    "torchvision>=0.19,<0.21",
+    "torchaudio>=2.4,<2.6",
     "open-clip-torch>=2.26",
     "pillow>=10.4",
     "faster-whisper>=1.0",
@@ -135,6 +136,8 @@ module = [
     "PIL",
     "PIL.*",
     "torch",
+    "librosa",
+    "soundfile",
 ]
 ignore_missing_imports = true
 follow_imports = "skip"

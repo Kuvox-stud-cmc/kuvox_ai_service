@@ -318,7 +318,15 @@ class IngestionService:
                 probed_metadata=await probe_audio_metadata(canonical_path),
             )
             await self._writer.write_audio(request, metadata)
-            audio_count = await self._index_media_audio(request, canonical_path, metadata)
+            embedding_audio_path = await self._audio_extractor.extract_full_audio(
+                canonical_path,
+                job_dir / "audio_embedding",
+            )
+            audio_count = await self._index_media_audio_best_effort(
+                request,
+                embedding_audio_path,
+                metadata,
+            )
             transcript_count = await self._index_audio_transcript_best_effort(
                 request,
                 canonical_path,
@@ -568,6 +576,41 @@ class IngestionService:
             [audio_media_point(request, metadata, embeddings[0])],
         )
         return 1
+
+    async def _index_media_audio_best_effort(
+        self,
+        request: IngestionRequested,
+        canonical_path: Path,
+        metadata: AudioMetadata,
+    ) -> int:
+        assert self._media_audio_writer is not None
+        try:
+            return await asyncio.wait_for(
+                self._index_media_audio(request, canonical_path, metadata),
+                timeout=self._optional_index_timeout_seconds,
+            )
+        except TimeoutError:
+            logger.warning(
+                "ingestion.audio.embedding_timeout",
+                media_id=request.media_id,
+                timeout_seconds=self._optional_index_timeout_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingestion.audio.embedding_failed",
+                media_id=request.media_id,
+                error=str(exc) or exc.__class__.__name__,
+            )
+
+        try:
+            await self._media_audio_writer.write_points(request, [])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ingestion.audio.embedding_cleanup_failed",
+                media_id=request.media_id,
+                error=str(exc) or exc.__class__.__name__,
+            )
+        return 0
 
     async def _index_audio_transcript_best_effort(
         self,

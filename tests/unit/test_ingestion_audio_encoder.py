@@ -61,17 +61,22 @@ async def test_audio_encoder_lazy_loads_msclap(
             def __init__(self, *, use_cuda: bool) -> None:
                 calls.append(f"load:{use_cuda}")
 
-            def get_audio_embeddings(self, paths: list[str], *, resample: bool) -> Encoded:
-                calls.append(f"encode:{Path(paths[0]).name}:{resample}")
+            def _get_audio_embeddings(self, batch: object) -> Encoded:
+                calls.append(f"encode:{batch}")
                 return Encoded()
 
     monkeypatch.setattr(audio_encoder_module, "_import_torch", lambda: Torch())
     monkeypatch.setattr(audio_encoder_module, "_import_msclap", lambda: MsClap)
+    monkeypatch.setattr(
+        audio_encoder_module,
+        "_load_audio_batch",
+        lambda clips, **_kwargs: Path(clips[0].path).name,
+    )
 
     encoder = MsClapAudioEncoder(device="auto", embedding_dim=2, batch_size=1)
 
     assert await encoder.encode_audio_clips([clip(tmp_path / "shot.wav")]) == [[0.6, 0.8]]
-    assert calls == ["load:False", "encode:shot.wav:True"]
+    assert calls == ["load:False", "encode:shot.wav"]
 
 
 async def test_audio_encoder_rejects_unexpected_dimensions(
@@ -95,11 +100,12 @@ async def test_audio_encoder_rejects_unexpected_dimensions(
             def __init__(self, *, use_cuda: bool) -> None:
                 return None
 
-            def get_audio_embeddings(self, paths: list[str], *, resample: bool) -> Encoded:
+            def _get_audio_embeddings(self, batch: object) -> Encoded:
                 return Encoded()
 
     monkeypatch.setattr(audio_encoder_module, "_import_torch", lambda: Torch())
     monkeypatch.setattr(audio_encoder_module, "_import_msclap", lambda: MsClap)
+    monkeypatch.setattr(audio_encoder_module, "_load_audio_batch", lambda clips, **_kwargs: clips)
 
     encoder = MsClapAudioEncoder(device="auto", embedding_dim=1024, batch_size=1)
 

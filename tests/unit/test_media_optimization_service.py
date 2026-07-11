@@ -90,7 +90,7 @@ async def fake_ffprobe_json(_path: Path) -> dict[str, Any]:
             [
                 ("kuvox-canonical", "media/media-1/canonical.mp4", "video/mp4"),
                 ("kuvox-proxy", "media/media-1/proxy.mp4", "video/mp4"),
-                ("kuvox-thumbnails", "media/media-1/poster.webp", "image/webp"),
+                ("kuvox-thumbnails", "media/media-1/poster.png", "image/png"),
             ],
         ),
         (
@@ -99,7 +99,7 @@ async def fake_ffprobe_json(_path: Path) -> dict[str, Any]:
             "audio/wav",
             [
                 ("kuvox-canonical", "media/media-1/canonical.opus", "audio/opus"),
-                ("kuvox-thumbnails", "media/media-1/waveform.webp", "image/webp"),
+                ("kuvox-thumbnails", "media/media-1/waveform.png", "image/png"),
             ],
         ),
         (

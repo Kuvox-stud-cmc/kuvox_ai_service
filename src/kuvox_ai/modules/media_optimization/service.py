@@ -77,7 +77,7 @@ class MediaOptimizationService:
     ) -> MediaOptimizationCompleted:
         canonical_path = job_dir / "canonical.mp4"
         proxy_path = job_dir / "proxy.mp4"
-        poster_path = job_dir / "poster.webp"
+        poster_path = job_dir / "poster.png"
 
         await ffmpeg.run_command(
             [
@@ -142,9 +142,7 @@ class MediaOptimizationService:
                 "-vf",
                 "scale=640:-2",
                 "-c:v",
-                "libwebp",
-                "-quality",
-                "75",
+                "png",
                 str(poster_path),
             ]
         )
@@ -165,8 +163,8 @@ class MediaOptimizationService:
         thumbnail = await self._upload_optional_optimized(
             poster_path,
             self._thumbnail_bucket,
-            f"{base_key}/poster.webp",
-            "image/webp",
+            f"{base_key}/poster.png",
+            "image/png",
         )
         metadata = await extract_basic_metadata_safely(canonical_path)
 
@@ -185,7 +183,7 @@ class MediaOptimizationService:
         job_dir: Path,
     ) -> MediaOptimizationCompleted:
         canonical_path = job_dir / "canonical.opus"
-        waveform_path = job_dir / "waveform.webp"
+        waveform_path = job_dir / "waveform.png"
         await ffmpeg.run_command(
             [
                 "ffmpeg",
@@ -212,9 +210,7 @@ class MediaOptimizationService:
                 "-frames:v",
                 "1",
                 "-c:v",
-                "libwebp",
-                "-quality",
-                "80",
+                "png",
                 str(waveform_path),
             ]
         )
@@ -229,8 +225,8 @@ class MediaOptimizationService:
         thumbnail = await self._upload_optional_optimized(
             waveform_path,
             self._thumbnail_bucket,
-            f"{base_key}/waveform.webp",
-            "image/webp",
+            f"{base_key}/waveform.png",
+            "image/png",
         )
         metadata = await extract_basic_metadata_safely(canonical_path)
         return self._completed(

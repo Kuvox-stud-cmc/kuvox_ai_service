@@ -36,13 +36,17 @@ class MsClapAudioEncoder:
     def _encode_audio_clips_sync(self, clips: list[ShotAudioClip]) -> list[list[float]]:
         self._load_model()
         assert self._model is not None
+        torch = _import_torch()
         embeddings: list[list[float]] = []
         for start in range(0, len(clips), self._batch_size):
             batch = clips[start : start + self._batch_size]
-            encoded = self._model.get_audio_embeddings(
-                [str(clip.path) for clip in batch],
-                resample=True,
+            preprocessed = _load_audio_batch(
+                batch,
+                model=self._model,
+                torch=torch,
+                device=self._device or "cpu",
             )
+            encoded = self._model._get_audio_embeddings(preprocessed)
             vectors = cast(list[list[float]], encoded.tolist())
             embeddings.extend(normalize_vectors(vectors))
 
@@ -73,6 +77,45 @@ def normalize_vectors(vectors: list[list[float]]) -> list[list[float]]:
         else:
             normalized.append([value / norm for value in vector])
     return normalized
+
+
+def _load_audio_batch(
+    clips: list[ShotAudioClip],
+    *,
+    model: Any,
+    torch: Any,
+    device: str,
+) -> Any:
+    import librosa
+    import numpy as np
+    import soundfile as sf
+
+    sample_rate = int(model.args.sampling_rate)
+    sample_count = max(1, round(float(model.args.duration) * sample_rate))
+    tensors: list[Any] = []
+
+    for clip in clips:
+        samples, source_rate = sf.read(
+            clip.path,
+            dtype="float32",
+            always_2d=True,
+        )
+        mono = np.asarray(samples, dtype=np.float32).mean(axis=1)
+        if mono.size == 0:
+            raise ValueError(f"Audio clip is empty: {clip.path}")
+        if int(source_rate) != sample_rate:
+            mono = librosa.resample(
+                mono,
+                orig_sr=int(source_rate),
+                target_sr=sample_rate,
+            )
+        if mono.size < sample_count:
+            mono = np.tile(mono, math.ceil(sample_count / mono.size))
+        mono = np.asarray(mono[:sample_count], dtype=np.float32)
+        tensors.append(torch.as_tensor(mono, dtype=torch.float32).reshape(1, -1))
+
+    batch = torch.stack(tensors, dim=0)
+    return batch.cuda() if device == "cuda" else batch
 
 
 def _import_msclap() -> Any:
