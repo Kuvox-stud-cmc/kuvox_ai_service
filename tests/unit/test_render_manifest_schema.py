@@ -138,26 +138,53 @@ def test_render_manifest_v2_round_trips_animation_and_required_stack_order() -> 
         "schemaVersion": 2,
         "projectId": "project-2",
         "settings": {
-            "preset": "h264-720p", "format": "mp4", "resolution": "1280x720",
-            "width": 320, "height": 180, "frameRate": 24, "quality": "draft",
+            "preset": "h264-720p",
+            "format": "mp4",
+            "resolution": "1280x720",
+            "width": 320,
+            "height": 180,
+            "frameRate": 24,
+            "quality": "draft",
             "destinationLabel": "Animated",
         },
         "durationSeconds": 2,
-        "mediaSources": [{
-            "mediaId": "image", "kind": "image", "name": "image.png", "width": 100,
-            "height": 200, "canonical": {"variant": "canonical", "url": "", "storageKey": "image.png"},
-        }],
-        "visualItems": [{
-            "itemId": "image-1", "trackId": "v1", "type": "image", "mediaId": "image",
-            "timelineStart": 0, "duration": 2, "layerOrder": 0, "stackOrder": 0,
-            "transform": {"x": 0, "y": 0, "scaleX": 1, "scaleY": 1, "rotation": 0},
-            "crop": {"top": 0, "right": 0, "bottom": 0, "left": 0}, "opacity": 1,
-            "animation": {"transform": {"x": {"keyframes": [
-                {"time": 0, "value": 0},
-                {"time": 2, "value": 100, "easing": [0.42, 0, 0.58, 1]},
-            ]}}},
-        }],
-        "audioItems": [], "textOverlays": [],
+        "mediaSources": [
+            {
+                "mediaId": "image",
+                "kind": "image",
+                "name": "image.png",
+                "width": 100,
+                "height": 200,
+                "canonical": {"variant": "canonical", "url": "", "storageKey": "image.png"},
+            }
+        ],
+        "visualItems": [
+            {
+                "itemId": "image-1",
+                "trackId": "v1",
+                "type": "image",
+                "mediaId": "image",
+                "timelineStart": 0,
+                "duration": 2,
+                "layerOrder": 0,
+                "stackOrder": 0,
+                "transform": {"x": 0, "y": 0, "scaleX": 1, "scaleY": 1, "rotation": 0},
+                "crop": {"top": 0, "right": 0, "bottom": 0, "left": 0},
+                "opacity": 1,
+                "animation": {
+                    "transform": {
+                        "x": {
+                            "keyframes": [
+                                {"time": 0, "value": 0},
+                                {"time": 2, "value": 100, "easing": [0.42, 0, 0.58, 1]},
+                            ]
+                        }
+                    }
+                },
+            }
+        ],
+        "audioItems": [],
+        "textOverlays": [],
     }
 
     manifest = VideoRenderManifest.model_validate(payload)

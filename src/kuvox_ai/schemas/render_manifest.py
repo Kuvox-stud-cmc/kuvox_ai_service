@@ -180,7 +180,10 @@ class VideoRenderManifest(_CamelModel):
     @model_validator(mode="before")
     @classmethod
     def upgrade_v1_stack_order(cls, value: object) -> object:
-        if not isinstance(value, dict) or value.get("schemaVersion", value.get("schema_version")) != 1:
+        if (
+            not isinstance(value, dict)
+            or value.get("schemaVersion", value.get("schema_version")) != 1
+        ):
             return value
         upgraded = dict(value)
         visuals = [dict(item) for item in upgraded.get("visualItems", [])]

@@ -496,7 +496,9 @@ async def test_ingest_audio_writes_audio_graph_and_media_indexes(
         AsyncMock(return_value=AudioMetadata(duration_seconds=8.0, codec="opus")),
     )
     audio_encoder.encode_audio_clips.return_value = [[0.3] * 1024]
-    audio_extractor.extract_full_audio.return_value = tmp_path / "audio_embedding" / "full_audio.wav"
+    audio_extractor.extract_full_audio.return_value = (
+        tmp_path / "audio_embedding" / "full_audio.wav"
+    )
     transcriber.transcribe.return_value = [
         TranscriptSegment(start_seconds=0.0, end_seconds=4.0, text="hello"),
         TranscriptSegment(start_seconds=4.0, end_seconds=8.0, text="world"),
@@ -556,7 +558,9 @@ async def test_ingest_audio_optional_transcript_failure_still_completes(
         AsyncMock(return_value=AudioMetadata(duration_seconds=8.0, codec="opus")),
     )
     audio_encoder.encode_audio_clips.return_value = [[0.3] * 1024]
-    audio_extractor.extract_full_audio.return_value = tmp_path / "audio_embedding" / "full_audio.wav"
+    audio_extractor.extract_full_audio.return_value = (
+        tmp_path / "audio_embedding" / "full_audio.wav"
+    )
     transcriber.transcribe.side_effect = RuntimeError("whisper unavailable")
 
     svc = IngestionService(
@@ -599,7 +603,9 @@ async def test_ingest_audio_embedding_failure_still_completes(
         "probe_audio_metadata",
         AsyncMock(return_value=AudioMetadata(duration_seconds=8.0, codec="opus")),
     )
-    audio_extractor.extract_full_audio.return_value = tmp_path / "audio_embedding" / "full_audio.wav"
+    audio_extractor.extract_full_audio.return_value = (
+        tmp_path / "audio_embedding" / "full_audio.wav"
+    )
     audio_encoder.encode_audio_clips.side_effect = RuntimeError("TorchCodec unavailable")
     transcriber.transcribe.return_value = []
 

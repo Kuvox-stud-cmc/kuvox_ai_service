@@ -15,11 +15,11 @@ from kuvox_ai.config import Settings, get_settings
 from kuvox_ai.infrastructure.object_storage_client import ObjectStorageClient
 from kuvox_ai.infrastructure.rabbitmq_client import RabbitMQClient, retry_attempt
 from kuvox_ai.logging import configure_logging, get_logger
-from kuvox_ai.modules.media_optimization import ffmpeg
 from kuvox_ai.modules.media_optimization import (
     MediaOptimizationFailed,
     MediaOptimizationRequested,
     MediaOptimizationService,
+    ffmpeg,
 )
 
 logger = get_logger(__name__)

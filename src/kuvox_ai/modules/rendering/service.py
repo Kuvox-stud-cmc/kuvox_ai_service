@@ -48,7 +48,9 @@ class RenderingService:
     the output file, and uploads it to object storage.
     """
 
-    def __init__(self, *, storage: ObjectStorageClient, work_dir: Path | str = Path("/tmp/kuvox-rendering")) -> None:
+    def __init__(
+        self, *, storage: ObjectStorageClient, work_dir: Path | str = Path("/tmp/kuvox-rendering")
+    ) -> None:
         self._storage = storage
         self._work_dir = Path(work_dir)
 
@@ -136,7 +138,8 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
     effects = document.get("effects")
     if isinstance(effects, list):
         enabled_effects = [
-            effect for effect in effects
+            effect
+            for effect in effects
             if isinstance(effect, dict) and effect.get("enabled") is not False
         ]
         if enabled_effects:
@@ -176,19 +179,23 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
             item_id = str(item.get("id") or "")
 
             if item_type == "text":
-                text_overlays.append({
-                    "itemId": item_id,
-                    "trackId": track_id,
-                    "text": str(item.get("text") or ""),
-                    "timelineStart": _non_negative_float(item.get("timelineStart"), "item.timelineStart"),
-                    "duration": duration,
-                    "style": _text_style(item.get("style")),
-                    "transform": _transform(item.get("transform")),
-                    "opacity": 1,
-                    "layerOrder": _int_or(item.get("layerOrder"), track_index),
-                    "stackOrder": stack_orders.get(item_id, 0),
-                    **_animation_for_item(item),
-                })
+                text_overlays.append(
+                    {
+                        "itemId": item_id,
+                        "trackId": track_id,
+                        "text": str(item.get("text") or ""),
+                        "timelineStart": _non_negative_float(
+                            item.get("timelineStart"), "item.timelineStart"
+                        ),
+                        "duration": duration,
+                        "style": _text_style(item.get("style")),
+                        "transform": _transform(item.get("transform")),
+                        "opacity": 1,
+                        "layerOrder": _int_or(item.get("layerOrder"), track_index),
+                        "stackOrder": stack_orders.get(item_id, 0),
+                        **_animation_for_item(item),
+                    }
+                )
                 continue
 
             if item_type not in {"video", "image", "overlay", "audio"}:
@@ -196,13 +203,22 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
             media_id = str(item.get("mediaId") or "")
             source = media_by_id.get(media_id)
             if source is None:
-                raise RenderManifestError(f"Timeline item {item_id} references unresolved media {media_id}.")
-            if source.bucket_name is None or not source.bucket_name.strip() or not source.object_key.strip():
+                raise RenderManifestError(
+                    f"Timeline item {item_id} references unresolved media {media_id}."
+                )
+            if (
+                source.bucket_name is None
+                or not source.bucket_name.strip()
+                or not source.object_key.strip()
+            ):
                 raise RenderManifestError(f"Media source {media_id} is missing bucket/key.")
 
             media_ref = document_media.get(media_id) if isinstance(document_media, dict) else None
             if item_type != "audio" and (
-                source.width is None or source.width <= 0 or source.height is None or source.height <= 0
+                source.width is None
+                or source.width <= 0
+                or source.height is None
+                or source.height <= 0
             ):
                 raise RenderManifestError(
                     f"Media source {media_id} is missing dimensions required for rendering."
@@ -212,20 +228,24 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
             if item_type == "audio":
                 if item.get("muted") is True:
                     continue
-                audio_items.append({
-                    "itemId": item_id,
-                    "trackId": track_id,
-                    "mediaId": media_id,
-                    "timelineStart": _non_negative_float(item.get("timelineStart"), "item.timelineStart"),
-                    "duration": duration,
-                    "sourceIn": _non_negative_float(item.get("sourceIn"), "item.sourceIn"),
-                    "sourceOut": _positive_float(item.get("sourceOut"), "item.sourceOut"),
-                    "speed": _positive_float(item.get("speed"), "item.speed", default=1),
-                    "volume": _unit_float(item.get("volume"), default=1),
-                    "muted": False,
-                    "fades": _audio_fades(item.get("fades")),
-                    "layerOrder": track_index,
-                })
+                audio_items.append(
+                    {
+                        "itemId": item_id,
+                        "trackId": track_id,
+                        "mediaId": media_id,
+                        "timelineStart": _non_negative_float(
+                            item.get("timelineStart"), "item.timelineStart"
+                        ),
+                        "duration": duration,
+                        "sourceIn": _non_negative_float(item.get("sourceIn"), "item.sourceIn"),
+                        "sourceOut": _positive_float(item.get("sourceOut"), "item.sourceOut"),
+                        "speed": _positive_float(item.get("speed"), "item.speed", default=1),
+                        "volume": _unit_float(item.get("volume"), default=1),
+                        "muted": False,
+                        "fades": _audio_fades(item.get("fades")),
+                        "layerOrder": track_index,
+                    }
+                )
                 continue
 
             visual = {
@@ -233,7 +253,9 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
                 "trackId": track_id,
                 "type": item_type,
                 "mediaId": media_id,
-                "timelineStart": _non_negative_float(item.get("timelineStart"), "item.timelineStart"),
+                "timelineStart": _non_negative_float(
+                    item.get("timelineStart"), "item.timelineStart"
+                ),
                 "duration": duration,
                 "layerOrder": _int_or(item.get("layerOrder"), track_index),
                 "stackOrder": stack_orders.get(item_id, 0),
@@ -257,16 +279,18 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
         + [_item_end(item) for item in text_overlays]
     )
 
-    manifest = VideoRenderManifest.model_validate({
-        "schemaVersion": 2,
-        "projectId": str(document.get("projectId") or job.project_id),
-        "settings": settings,
-        "durationSeconds": round(duration_seconds, 3),
-        "mediaSources": sorted(media_sources.values(), key=lambda item: str(item["mediaId"])),
-        "visualItems": sorted(visual_items, key=_stack_sort_key),
-        "audioItems": sorted(audio_items, key=_sort_key),
-        "textOverlays": sorted(text_overlays, key=_stack_sort_key),
-    })
+    manifest = VideoRenderManifest.model_validate(
+        {
+            "schemaVersion": 2,
+            "projectId": str(document.get("projectId") or job.project_id),
+            "settings": settings,
+            "durationSeconds": round(duration_seconds, 3),
+            "mediaSources": sorted(media_sources.values(), key=lambda item: str(item["mediaId"])),
+            "visualItems": sorted(visual_items, key=_stack_sort_key),
+            "audioItems": sorted(audio_items, key=_sort_key),
+            "textOverlays": sorted(text_overlays, key=_stack_sort_key),
+        }
+    )
     _validate_manifest_animation_frames(manifest)
 
     if not manifest.visual_items and not manifest.text_overlays:
@@ -293,12 +317,30 @@ async def _render_manifest(
     has_audio = await _render_audio_track(manifest, resolved_sources, audio_path)
     audio_finished = time.perf_counter()
     if has_audio:
-        await ffmpeg.run_command([
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-i", str(silent_video), "-i", str(audio_path),
-            "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "copy",
-            "-t", f"{max(0.1, manifest.duration_seconds):.6f}", str(output_path),
-        ])
+        await ffmpeg.run_command(
+            [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(silent_video),
+                "-i",
+                str(audio_path),
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "copy",
+                "-t",
+                f"{max(0.1, manifest.duration_seconds):.6f}",
+                str(output_path),
+            ]
+        )
     else:
         shutil.move(silent_video, output_path)
     finished_at = time.perf_counter()
@@ -315,14 +357,28 @@ async def _render_manifest(
 
 
 class _VideoFrameDecoder:
-    def __init__(self, path: Path, width: int, height: int, source_in: float, fps: int, speed: float) -> None:
+    def __init__(
+        self, path: Path, width: int, height: int, source_in: float, fps: int, speed: float
+    ) -> None:
         self._frame_bytes = width * height * 4
         self._process = subprocess.Popen(
             [
-                ffmpeg.resolve_ffmpeg_exe(), "-hide_banner", "-loglevel", "error",
-                "-ss", f"{source_in:.9f}", "-i", str(path), "-an",
-                "-vf", f"fps={fps / speed:.9f},scale={width}:{height}:flags=lanczos,format=rgba",
-                "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1",
+                ffmpeg.resolve_ffmpeg_exe(),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{source_in:.9f}",
+                "-i",
+                str(path),
+                "-an",
+                "-vf",
+                f"fps={fps / speed:.9f},scale={width}:{height}:flags=lanczos,format=rgba",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgba",
+                "pipe:1",
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -359,9 +415,23 @@ def _compose_and_encode_video(
     frame_count = max(1, math.ceil(max(0.1, manifest.duration_seconds) * fps))
     encoder = subprocess.Popen(
         [
-            ffmpeg.resolve_ffmpeg_exe(), "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{width}x{height}",
-            "-r", str(fps), "-i", "pipe:0", "-an", *_video_codec_args(manifest),
+            ffmpeg.resolve_ffmpeg_exe(),
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "-s",
+            f"{width}x{height}",
+            "-r",
+            str(fps),
+            "-i",
+            "pipe:0",
+            "-an",
+            *_video_codec_args(manifest),
             str(output_path),
         ],
         stdin=subprocess.PIPE,
@@ -391,7 +461,9 @@ def _compose_and_encode_video(
                 if isinstance(item, VideoRenderVisualItem):
                     source = resolved_sources.get(item.media_id)
                     if source is None:
-                        raise RenderManifestError(f"Media source {item.media_id} was not downloaded.")
+                        raise RenderManifestError(
+                            f"Media source {item.media_id} was not downloaded."
+                        )
                     decode_started = time.perf_counter()
                     if item.type == "video":
                         decoder = decoders.get(item.item_id)
@@ -414,11 +486,15 @@ def _compose_and_encode_video(
                             media_source = _manifest_source(manifest, item.media_id)
                             expected_size = (media_source.width or 1, media_source.height or 1)
                             if source_image.size != expected_size:
-                                source_image = source_image.resize(expected_size, Image.Resampling.LANCZOS)
+                                source_image = source_image.resize(
+                                    expected_size, Image.Resampling.LANCZOS
+                                )
                             image_cache[item.media_id] = source_image
                     decoding_seconds += time.perf_counter() - decode_started
                     if source_image is not None:
-                        layer, position = _render_visual_layer(source_image, item, item_time, width, height)
+                        layer, position = _render_visual_layer(
+                            source_image, item, item_time, width, height
+                        )
                         frame.alpha_composite(layer, position)
                 else:
                     layer, position = _render_text_layer(item, item_time, manifest)
@@ -440,7 +516,9 @@ def _compose_and_encode_video(
         "frame_count": float(frame_count),
         "decoding_seconds": decoding_seconds,
         "compositing_seconds": compositing_seconds,
-        "encoding_seconds": max(0.0, time.perf_counter() - encode_started - compositing_seconds - decoding_seconds),
+        "encoding_seconds": max(
+            0.0, time.perf_counter() - encode_started - compositing_seconds - decoding_seconds
+        ),
     }
 
 
@@ -478,14 +556,18 @@ def _render_visual_layer(
     return layer, (round(center_x - layer.width / 2), round(center_y - layer.height / 2))
 
 
-def _render_text_layer(item: Any, item_time: float, manifest: VideoRenderManifest) -> tuple[Image.Image, tuple[int, int]]:
+def _render_text_layer(
+    item: Any, item_time: float, manifest: VideoRenderManifest
+) -> tuple[Image.Image, tuple[int, int]]:
     transform = _evaluated_transform(item, item_time)
     opacity = _evaluated_opacity(item, item_time)
     width = max(1, round(manifest.settings.width * 0.8 * transform["scaleX"]))
     height = max(1, round(manifest.settings.height * 0.12 * transform["scaleY"]))
     layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     if item.style.background_color:
-        background = Image.new("RGBA", layer.size, _rgba(item.style.background_color, round(255 * 0.72)))
+        background = Image.new(
+            "RGBA", layer.size, _rgba(item.style.background_color, round(255 * 0.72))
+        )
         mask = Image.new("L", layer.size, 0)
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, width - 1, height - 1), radius=6, fill=255)
         layer.alpha_composite(Image.composite(background, Image.new("RGBA", layer.size), mask))
@@ -495,11 +577,19 @@ def _render_text_layer(item: Any, item_time: float, manifest: VideoRenderManifes
     text = "\n".join(lines)
     draw = ImageDraw.Draw(layer)
     spacing = 4
-    bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=spacing, stroke_width=round(item.style.stroke_width or 0))
+    bbox = draw.multiline_textbbox(
+        (0, 0), text, font=font, spacing=spacing, stroke_width=round(item.style.stroke_width or 0)
+    )
     rendered_width = bbox[2] - bbox[0]
     rendered_height = bbox[3] - bbox[1]
     align = item.style.text_align or "center"
-    x = 0 if align == "left" else width - rendered_width if align == "right" else (width - rendered_width) / 2
+    x = (
+        0
+        if align == "left"
+        else width - rendered_width
+        if align == "right"
+        else (width - rendered_width) / 2
+    )
     y = (height - rendered_height) / 2 - bbox[1]
     shadow_blur = item.style.shadow_blur if item.style.shadow_blur is not None else 10
     shadow_color = item.style.shadow_color or "black"
@@ -507,11 +597,20 @@ def _render_text_layer(item: Any, item_time: float, manifest: VideoRenderManifes
         shadow = Image.new("RGBA", layer.size, (0, 0, 0, 0))
         ImageDraw.Draw(shadow).multiline_text(
             (x + (item.style.shadow_offset_x or 0), y + (item.style.shadow_offset_y or 0)),
-            text, font=font, fill=_rgba(shadow_color, round(255 * 0.55)), align=align, spacing=spacing,
+            text,
+            font=font,
+            fill=_rgba(shadow_color, round(255 * 0.55)),
+            align=align,
+            spacing=spacing,
         )
         layer.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(shadow_blur)))
     draw.multiline_text(
-        (x, y), text, font=font, fill=_rgba(item.style.color, 255), align=align, spacing=spacing,
+        (x, y),
+        text,
+        font=font,
+        fill=_rgba(item.style.color, 255),
+        align=align,
+        spacing=spacing,
         stroke_width=round(item.style.stroke_width or 0),
         stroke_fill=_rgba(item.style.stroke_color or item.style.color, 255),
     )
@@ -522,7 +621,9 @@ def _render_text_layer(item: Any, item_time: float, manifest: VideoRenderManifes
         round(manifest.settings.height * 0.5 + transform["y"]),
     )
     if transform["rotation"]:
-        rotated = layer.rotate(-transform["rotation"], resample=Image.Resampling.BICUBIC, expand=True)
+        rotated = layer.rotate(
+            -transform["rotation"], resample=Image.Resampling.BICUBIC, expand=True
+        )
         radians = math.radians(transform["rotation"])
         corners = [(0, 0), (width, 0), (0, height), (width, height)]
         min_x = min(x * math.cos(radians) - y * math.sin(radians) for x, y in corners)
@@ -553,23 +654,32 @@ async def _render_audio_track(
     duration = max(0.1, manifest.duration_seconds)
     for index, item in enumerate(manifest.audio_items):
         label = f"a{index}"
-        item_duration = min(item.duration, max(0.001, (item.source_out - item.source_in) / item.speed))
+        item_duration = min(
+            item.duration, max(0.001, (item.source_out - item.source_in) / item.speed)
+        )
         parts = [
             f"[{input_indices[item.media_id]}:a]atrim=start={item.source_in:.6f}:end={item.source_out:.6f}",
             "asetpts=PTS-STARTPTS",
             *(_atempo_filters(item.speed) if item.speed != 1 else []),
-            f"atrim=duration={item_duration:.6f}", f"volume={item.volume:.6f}",
+            f"atrim=duration={item_duration:.6f}",
+            f"volume={item.volume:.6f}",
         ]
         if item.fades.fade_in_duration > 0:
             parts.append(f"afade=t=in:st=0:d={item.fades.fade_in_duration:.6f}")
         if item.fades.fade_out_duration > 0:
-            parts.append(f"afade=t=out:st={max(0, item_duration - item.fades.fade_out_duration):.6f}:d={item.fades.fade_out_duration:.6f}")
+            parts.append(
+                f"afade=t=out:st={max(0, item_duration - item.fades.fade_out_duration):.6f}:d={item.fades.fade_out_duration:.6f}"
+            )
         delay_ms = max(0, round(item.timeline_start * 1000))
         parts.append(f"adelay={delay_ms}|{delay_ms}")
         filters.append(",".join(parts) + f"[{label}]")
         labels.append(label)
     joined = "".join(f"[{label}]" for label in labels)
-    mix = f"{joined}amix=inputs={len(labels)}:duration=longest:dropout_transition=0" if len(labels) > 1 else f"[{labels[0]}]anull"
+    mix = (
+        f"{joined}amix=inputs={len(labels)}:duration=longest:dropout_transition=0"
+        if len(labels) > 1
+        else f"[{labels[0]}]anull"
+    )
     filters.append(f"{mix},apad=whole_dur={duration:.6f},atrim=duration={duration:.6f}[aout]")
     args.extend(["-filter_complex", ";".join(filters), "-map", "[aout]"])
     if manifest.settings.format == "mov":
@@ -645,7 +755,9 @@ def evaluate_animation_track(
     )
     left = keyframes[right_index - 1]
     right = keyframes[right_index]
-    progress = (item_time - left.time) / max(float.fromhex("0x1.0000000000000p-52"), right.time - left.time)
+    progress = (item_time - left.time) / max(
+        float.fromhex("0x1.0000000000000p-52"), right.time - left.time
+    )
     easing = right.easing
     if easing is not None:
         inverse = 1 - progress
@@ -660,8 +772,12 @@ def evaluate_animation_track(
 def _evaluated_transform(item: Any, item_time: float) -> dict[str, float]:
     animation = item.animation.transform if item.animation and item.animation.transform else None
     return {
-        "x": evaluate_animation_track(animation.x if animation else None, item_time, item.transform.x),
-        "y": evaluate_animation_track(animation.y if animation else None, item_time, item.transform.y),
+        "x": evaluate_animation_track(
+            animation.x if animation else None, item_time, item.transform.x
+        ),
+        "y": evaluate_animation_track(
+            animation.y if animation else None, item_time, item.transform.y
+        ),
         "scaleX": evaluate_animation_track(
             animation.scale_x if animation else None, item_time, item.transform.scale_x
         ),
@@ -677,14 +793,18 @@ def _evaluated_transform(item: Any, item_time: float) -> dict[str, float]:
 def _evaluated_crop(item: Any, item_time: float) -> dict[str, float]:
     animation = item.animation.crop if item.animation and item.animation.crop else None
     return {
-        "top": evaluate_animation_track(animation.top if animation else None, item_time, item.crop.top),
+        "top": evaluate_animation_track(
+            animation.top if animation else None, item_time, item.crop.top
+        ),
         "right": evaluate_animation_track(
             animation.right if animation else None, item_time, item.crop.right
         ),
         "bottom": evaluate_animation_track(
             animation.bottom if animation else None, item_time, item.crop.bottom
         ),
-        "left": evaluate_animation_track(animation.left if animation else None, item_time, item.crop.left),
+        "left": evaluate_animation_track(
+            animation.left if animation else None, item_time, item.crop.left
+        ),
     }
 
 
@@ -718,21 +838,33 @@ def _video_codec_args(manifest: VideoRenderManifest) -> list[str]:
         return ["-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le"]
     crf = {"draft": "28", "standard": "23", "high": "18"}[manifest.settings.quality]
     return [
-        "-c:v", "libx264", "-preset", "medium", "-crf", crf, "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        crf,
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
     ]
 
 
 def _settings_for_manifest(job: RenderJob) -> dict[str, Any]:
     settings = dict(job.settings)
-    document_settings = job.document_json.get("settings") if isinstance(job.document_json, dict) else {}
+    document_settings = (
+        job.document_json.get("settings") if isinstance(job.document_json, dict) else {}
+    )
     if not isinstance(document_settings, dict):
         document_settings = {}
     width = int(settings.get("width") or document_settings.get("width") or 1920)
     height = int(settings.get("height") or document_settings.get("height") or 1080)
     frame_rate = int(settings.get("frameRate") or document_settings.get("frameRate") or 30)
     return {
-        "preset": str(settings.get("preset") or document_settings.get("exportPreset") or "h264-1080p"),
+        "preset": str(
+            settings.get("preset") or document_settings.get("exportPreset") or "h264-1080p"
+        ),
         "format": str(settings.get("format") or "mp4"),
         "resolution": str(settings.get("resolution") or _resolution_for(width, height)),
         "width": width,
@@ -743,7 +875,9 @@ def _settings_for_manifest(job: RenderJob) -> dict[str, Any]:
     }
 
 
-def _manifest_media_source(media_id: str, media_ref: Any, source: RenderingMediaSource) -> dict[str, Any]:
+def _manifest_media_source(
+    media_id: str, media_ref: Any, source: RenderingMediaSource
+) -> dict[str, Any]:
     ref = media_ref if isinstance(media_ref, dict) else {}
     return {
         "mediaId": media_id,
@@ -789,7 +923,13 @@ def _font_candidates(family: str, *, bold: bool, italic: bool) -> tuple[str, ...
     entry = catalog.get(requested) or catalog["Inter"]
     if "fallback" in entry:
         entry = catalog.get(entry["fallback"], catalog["Inter"])
-    key = "italic" if italic and "italic" in entry else "bold" if bold and "bold" in entry else "regular"
+    key = (
+        "italic"
+        if italic and "italic" in entry
+        else "bold"
+        if bold and "bold" in entry
+        else "regular"
+    )
     primary = _font_assets_dir() / entry[key]
     fallback = _font_assets_dir() / catalog["Inter"]["regular"]
     return (str(primary), str(fallback), "DejaVuSans.ttf")
@@ -834,13 +974,27 @@ def _text_style(value: Any) -> dict[str, Any]:
         "fontFamily": str(style.get("fontFamily") or "Inter"),
         "fontSize": _positive_float(style.get("fontSize"), "style.fontSize", default=48),
         "color": str(style.get("color") or "#ffffff"),
-        "backgroundColor": style.get("backgroundColor") if isinstance(style.get("backgroundColor"), str) else None,
-        "fontWeight": style.get("fontWeight") if style.get("fontWeight") in {"normal", "medium", "semibold", "bold"} else "normal",
-        "fontStyle": style.get("fontStyle") if style.get("fontStyle") in {"normal", "italic"} else "normal",
-        "textAlign": style.get("textAlign") if style.get("textAlign") in {"left", "center", "right"} else "center",
-        "strokeColor": style.get("strokeColor") if isinstance(style.get("strokeColor"), str) else None,
-        "strokeWidth": _non_negative_float(style.get("strokeWidth"), "style.strokeWidth", default=0),
-        "shadowColor": style.get("shadowColor") if isinstance(style.get("shadowColor"), str) else None,
+        "backgroundColor": style.get("backgroundColor")
+        if isinstance(style.get("backgroundColor"), str)
+        else None,
+        "fontWeight": style.get("fontWeight")
+        if style.get("fontWeight") in {"normal", "medium", "semibold", "bold"}
+        else "normal",
+        "fontStyle": style.get("fontStyle")
+        if style.get("fontStyle") in {"normal", "italic"}
+        else "normal",
+        "textAlign": style.get("textAlign")
+        if style.get("textAlign") in {"left", "center", "right"}
+        else "center",
+        "strokeColor": style.get("strokeColor")
+        if isinstance(style.get("strokeColor"), str)
+        else None,
+        "strokeWidth": _non_negative_float(
+            style.get("strokeWidth"), "style.strokeWidth", default=0
+        ),
+        "shadowColor": style.get("shadowColor")
+        if isinstance(style.get("shadowColor"), str)
+        else None,
         "shadowBlur": _non_negative_float(style.get("shadowBlur"), "style.shadowBlur", default=10),
         "shadowOffsetX": _float_or(style.get("shadowOffsetX"), 0),
         "shadowOffsetY": _float_or(style.get("shadowOffsetY"), 0),
@@ -865,13 +1019,15 @@ def _stack_orders(tracks: list[Any]) -> dict[str, int]:
             layer_order = _int_or(item.get("layerOrder"), 0)
             primary_order = -track_index if phase == 0 else layer_order
             secondary_order = layer_order if phase == 0 else track_index
-            candidates.append((
-                phase,
-                primary_order,
-                secondary_order,
-                item_index,
-                str(item.get("id") or ""),
-            ))
+            candidates.append(
+                (
+                    phase,
+                    primary_order,
+                    secondary_order,
+                    item_index,
+                    str(item.get("id") or ""),
+                )
+            )
     candidates.sort()
     return {candidate[4]: index for index, candidate in enumerate(candidates)}
 
@@ -904,7 +1060,9 @@ def _unsupported_advanced_state(item: dict[str, Any]) -> str | None:
         tracks.extend(crop.values())
     if advanced.get("opacity") is not None:
         tracks.append(advanced["opacity"])
-    if not tracks or any(not isinstance(track, dict) or not track.get("keyframes") for track in tracks):
+    if not tracks or any(
+        not isinstance(track, dict) or not track.get("keyframes") for track in tracks
+    ):
         return (
             f"Advanced state on {item_id} must contain supported transform, crop, "
             "or opacity keyframes."
@@ -919,16 +1077,20 @@ def _animation_for_item(item: dict[str, Any]) -> dict[str, Any]:
     transform = _animation_properties(
         advanced.get("transform"), ("x", "y", "scaleX", "scaleY", "rotation")
     )
-    crop = None if item.get("type") == "text" else _animation_properties(
-        advanced.get("crop"), ("top", "right", "bottom", "left")
+    crop = (
+        None
+        if item.get("type") == "text"
+        else _animation_properties(advanced.get("crop"), ("top", "right", "bottom", "left"))
     )
     opacity = _animation_track(advanced.get("opacity"))
     animation = {
-        key: value for key, value in {
+        key: value
+        for key, value in {
             "transform": transform,
             "crop": crop,
             "opacity": opacity,
-        }.items() if value is not None
+        }.items()
+        if value is not None
     }
     return {"animation": animation} if animation else {}
 
@@ -963,8 +1125,12 @@ def _animation_track(value: Any) -> dict[str, Any] | None:
 def _audio_fades(value: Any) -> dict[str, float]:
     fades = value if isinstance(value, dict) else {}
     return {
-        "fadeInDuration": _non_negative_float(fades.get("fadeInDuration"), "fades.fadeInDuration", default=0),
-        "fadeOutDuration": _non_negative_float(fades.get("fadeOutDuration"), "fades.fadeOutDuration", default=0),
+        "fadeInDuration": _non_negative_float(
+            fades.get("fadeInDuration"), "fades.fadeInDuration", default=0
+        ),
+        "fadeOutDuration": _non_negative_float(
+            fades.get("fadeOutDuration"), "fades.fadeOutDuration", default=0
+        ),
     }
 
 
@@ -1039,7 +1205,10 @@ def _output_extension(job: RenderJob) -> str:
 
 
 def _safe_path_part(value: str) -> str:
-    return "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)[:128] or "job"
+    return (
+        "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)[:128]
+        or "job"
+    )
 
 
 def _positive_float(value: Any, name: str, default: float | None = None) -> float:

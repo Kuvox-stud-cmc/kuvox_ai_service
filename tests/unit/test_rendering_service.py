@@ -22,7 +22,9 @@ from kuvox_ai.modules.rendering.service import (
 from kuvox_ai.schemas.render_manifest import VideoRenderAnimationTrack
 
 
-async def test_render_image_only_uploads_playable_mp4(mock_storage: AsyncMock, tmp_path: Path) -> None:
+async def test_render_image_only_uploads_playable_mp4(
+    mock_storage: AsyncMock, tmp_path: Path
+) -> None:
     try:
         ffmpeg.resolve_ffmpeg_exe()
     except ffmpeg.FfmpegError as exc:
@@ -70,10 +72,14 @@ def test_build_manifest_rejects_missing_source_bucket() -> None:
 
 
 def test_animation_evaluator_matches_typescript_hold_and_easing() -> None:
-    track = VideoRenderAnimationTrack.model_validate({"keyframes": [
-        {"time": 0, "value": 0},
-        {"time": 2, "value": 100, "easing": [0.42, 0, 0.58, 1]},
-    ]})
+    track = VideoRenderAnimationTrack.model_validate(
+        {
+            "keyframes": [
+                {"time": 0, "value": 0},
+                {"time": 2, "value": 100, "easing": [0.42, 0, 0.58, 1]},
+            ]
+        }
+    )
     assert evaluate_animation_track(track, -1, 50) == 0
     assert evaluate_animation_track(track, 1, 50) == pytest.approx(50)
     assert evaluate_animation_track(track, 2, 50) == 100
@@ -103,11 +109,17 @@ def test_video_decoder_samples_source_time_at_output_speed(monkeypatch: pytest.M
     def fake_popen(args: list[str], **_kwargs: object) -> SimpleNamespace:
         captured.extend(args)
         return SimpleNamespace(
-            stdout=BytesIO(b""), stderr=BytesIO(b""), poll=lambda: 0,
-            terminate=lambda: None, communicate=lambda **_kwargs: (b"", b""), kill=lambda: None,
+            stdout=BytesIO(b""),
+            stderr=BytesIO(b""),
+            poll=lambda: 0,
+            terminate=lambda: None,
+            communicate=lambda **_kwargs: (b"", b""),
+            kill=lambda: None,
         )
 
-    monkeypatch.setattr("kuvox_ai.modules.rendering.service.ffmpeg.resolve_ffmpeg_exe", lambda: "ffmpeg")
+    monkeypatch.setattr(
+        "kuvox_ai.modules.rendering.service.ffmpeg.resolve_ffmpeg_exe", lambda: "ffmpeg"
+    )
     monkeypatch.setattr("kuvox_ai.modules.rendering.service.subprocess.Popen", fake_popen)
 
     decoder = _VideoFrameDecoder(Path("source.mp4"), 320, 180, 3.5, 24, 2)
