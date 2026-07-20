@@ -156,6 +156,10 @@ def build_service(
 async def run_async() -> None:
     settings = get_settings()
     configure_logging(settings)
+    if not settings.media_ingestion_enabled:
+        logger.info("ingestion_worker.disabled")
+        return
+
     logger.info(
         "ingestion_worker.starting",
         queue=settings.ingestion_requested_queue,

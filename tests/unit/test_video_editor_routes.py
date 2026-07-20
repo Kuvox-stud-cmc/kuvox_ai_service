@@ -7,6 +7,7 @@ from kuvox_ai.api.middleware import RequestLoggingMiddleware
 from kuvox_ai.api.routes.planning import router as planning_router
 from kuvox_ai.api.routes.retrieval import router as retrieval_router
 from kuvox_ai.api.state import get_state
+from kuvox_ai.config import Settings, get_settings
 from kuvox_ai.modules.planning.models import MoveItemAction, VideoEditorPlanningResponse
 from kuvox_ai.modules.retrieval.models import (
     RetrievalEvidenceSnippet,
@@ -21,6 +22,11 @@ def test_video_editor_routes_keep_camel_case_schema_and_echo_correlation_header(
     app.include_router(planning_router)
     app.include_router(retrieval_router)
     app.dependency_overrides[get_state] = lambda: _State()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        media_retrieval_enabled=True,
+        s3_access_key="test",
+        s3_secret_key="test",
+    )
     client = TestClient(app)
 
     planning = client.post(

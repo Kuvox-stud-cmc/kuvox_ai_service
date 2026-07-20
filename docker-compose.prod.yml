@@ -19,6 +19,8 @@ services:
       API_URL: ${API_URL:-http://kuvox-api:5000}
       VITE_AI_SERVICE_URL: ${VITE_AI_SERVICE_URL:-http://kuvox-ai:8000}
       AI_SERVICE_URL: ${AI_SERVICE_URL:-http://kuvox-ai:8000}
+      KUVOX_MEDIA_INGESTION_ENABLED: "${KUVOX_MEDIA_INGESTION_ENABLED:-false}"
+      KUVOX_MEDIA_RETRIEVAL_ENABLED: "${KUVOX_MEDIA_RETRIEVAL_ENABLED:-false}"
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
       KUVOX_BFF_COALESCING_ENABLED: "${KUVOX_BFF_COALESCING_ENABLED:-false}"
       KUVOX_BFF_COALESCING_RESOURCES: "${KUVOX_BFF_COALESCING_RESOURCES:-auth_me,studio_memberships,retrieval_project_media}"
@@ -39,6 +41,8 @@ services:
       - "127.0.0.1:5000:5000"
     env_file: .env
     environment:
+      KUVOX_MEDIA_INGESTION_ENABLED: "${KUVOX_MEDIA_INGESTION_ENABLED:-false}"
+      KUVOX_MEDIA_RETRIEVAL_ENABLED: "${KUVOX_MEDIA_RETRIEVAL_ENABLED:-false}"
       ConnectionStrings__Redis: "redis-api:6379,user=kuvox-api,password=${REDIS_API_PASSWORD:?Set REDIS_API_PASSWORD in .env}"
       Caching__Enabled: "${API_CACHING_ENABLED:-false}"
       Caching__HttpValidatorsEnabled: "${API_HTTP_VALIDATORS_ENABLED:-false}"
@@ -85,6 +89,8 @@ services:
       KUVOX_PORT: "8000"
       KUVOX_ENVIRONMENT: "${KUVOX_ENVIRONMENT:-production}"
       KUVOX_RUN_WORKERS: "${KUVOX_RUN_WORKERS:-true}"
+      KUVOX_MEDIA_INGESTION_ENABLED: "${KUVOX_MEDIA_INGESTION_ENABLED:-false}"
+      KUVOX_MEDIA_RETRIEVAL_ENABLED: "${KUVOX_MEDIA_RETRIEVAL_ENABLED:-false}"
       KUVOX_QDRANT_HOST: "qdrant"
       KUVOX_QDRANT_PORT: "6333"
       KUVOX_REDIS_URL: "redis://redis-ai:6379/0"
@@ -123,8 +129,6 @@ services:
       # Persists the embedded Kuzu graph DB + model files across redeploys.
       - kuzu-data:/app/data
     depends_on:
-      qdrant:
-        condition: service_healthy
       redis-ai:
         condition: service_healthy
       rabbitmq:

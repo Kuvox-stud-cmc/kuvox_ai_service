@@ -201,8 +201,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("app.starting", environment=settings.environment)
 
     state = _build_state(settings)
-    await state.kuzu.connect()
-    await state.qdrant.connect()
+    semantic_dependencies_enabled = (
+        settings.media_ingestion_enabled or settings.media_retrieval_enabled
+    )
+    if semantic_dependencies_enabled:
+        await state.kuzu.connect()
+        await state.qdrant.connect()
+    else:
+        logger.info("app.semantic_dependencies.disabled")
     await state.redis.connect()
     await state.rabbitmq.connect()
     await state.storage.connect()
@@ -220,14 +226,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         logger.info("app.stopping")
         # Close in reverse order, best-effort.
-        for closer in (
+        closers = [
             state.llm.close,
             state.storage.close,
             state.rabbitmq.close,
             state.redis.close,
-            state.qdrant.close,
-            state.kuzu.close,
-        ):
+        ]
+        if semantic_dependencies_enabled:
+            closers.extend([state.qdrant.close, state.kuzu.close])
+        for closer in closers:
             try:
                 await closer()
             except Exception as exc:  # noqa: BLE001
@@ -276,33 +283,36 @@ async def _start_workers(state: AppState, settings: Settings) -> None:
         prefetch_count=settings.media_optimization_concurrency,
     )
 
-    await state.rabbitmq.declare_retry_topology(
-        settings.ingestion_requested_queue,
-        settings.ingestion_requested_routing_key,
-        settings.rabbitmq_retry_delay_list,
-    )
+    if settings.media_ingestion_enabled:
+        await state.rabbitmq.declare_retry_topology(
+            settings.ingestion_requested_queue,
+            settings.ingestion_requested_routing_key,
+            settings.rabbitmq_retry_delay_list,
+        )
 
-    async def handle_ingestion(message: AbstractIncomingMessage) -> None:
-        async with message.process(requeue=True):
-            headers = dict(message.headers or {})
-            await ingestion_worker.handle_message_body(
-                message.body,
-                service=state.ingestion,
-                rabbitmq=state.rabbitmq,
-                completed_routing_key=settings.ingestion_completed_routing_key,
-                failed_routing_key=settings.ingestion_failed_routing_key,
-                queue_name=settings.ingestion_requested_queue,
-                retry_attempt=retry_attempt(headers),
-                max_retry_attempts=settings.rabbitmq_retry_attempts,
-                headers=headers,
-            )
+        async def handle_ingestion(message: AbstractIncomingMessage) -> None:
+            async with message.process(requeue=True):
+                headers = dict(message.headers or {})
+                await ingestion_worker.handle_message_body(
+                    message.body,
+                    service=state.ingestion,
+                    rabbitmq=state.rabbitmq,
+                    completed_routing_key=settings.ingestion_completed_routing_key,
+                    failed_routing_key=settings.ingestion_failed_routing_key,
+                    queue_name=settings.ingestion_requested_queue,
+                    retry_attempt=retry_attempt(headers),
+                    max_retry_attempts=settings.rabbitmq_retry_attempts,
+                    headers=headers,
+                )
 
-    await state.rabbitmq.consume_bound_queue(
-        settings.ingestion_requested_queue,
-        settings.ingestion_requested_routing_key,
-        handle_ingestion,
-        prefetch_count=settings.ingestion_concurrency,
-    )
+        await state.rabbitmq.consume_bound_queue(
+            settings.ingestion_requested_queue,
+            settings.ingestion_requested_routing_key,
+            handle_ingestion,
+            prefetch_count=settings.ingestion_concurrency,
+        )
+    else:
+        logger.info("ingestion_worker.disabled")
 
     await state.rabbitmq.declare_retry_topology(
         settings.rendering_requested_queue,

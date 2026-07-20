@@ -27,13 +27,20 @@ async def ready(
     settings: Settings = Depends(get_settings),
 ) -> HealthResponse:
     """Check required dependencies and report optional Redis degradation."""
+    semantic_dependencies_enabled = (
+        settings.media_ingestion_enabled or settings.media_retrieval_enabled
+    )
     checks = {
-        "kuzu": state.kuzu.health_check(),
-        "qdrant": state.qdrant.health_check(),
         "rabbitmq": state.rabbitmq.health_check(),
         "object_storage": state.storage.health_check(),
         "llm": state.llm.health_check(),
     }
+    if semantic_dependencies_enabled:
+        checks = {
+            "kuzu": state.kuzu.health_check(),
+            "qdrant": state.qdrant.health_check(),
+            **checks,
+        }
     if settings.cache_enabled:
         checks["redis"] = state.redis.health_check()
     results = await asyncio.gather(*checks.values(), return_exceptions=True)
@@ -55,6 +62,13 @@ async def ready(
 
     if not settings.cache_enabled:
         deps.append(DependencyHealth(name="redis", status="disabled", required=False))
+    if not semantic_dependencies_enabled:
+        deps.extend(
+            [
+                DependencyHealth(name="kuzu", status="disabled", required=False),
+                DependencyHealth(name="qdrant", status="disabled", required=False),
+            ]
+        )
 
     if required_unhealthy:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE

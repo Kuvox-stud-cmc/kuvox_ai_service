@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from kuvox_ai.api.schemas import (
     RetrievalHttpRequest,
@@ -11,10 +11,24 @@ from kuvox_ai.api.schemas import (
     VideoEditorRetrievalHttpResponse,
 )
 from kuvox_ai.api.state import AppState, get_state
+from kuvox_ai.config import Settings, get_settings
 from kuvox_ai.logging import get_logger
 from kuvox_ai.modules.retrieval.models import RetrievalQuery, VideoEditorRetrievalQuery
 
-router = APIRouter(prefix="/retrieval", tags=["retrieval"])
+
+def require_retrieval_enabled(settings: Settings = Depends(get_settings)) -> None:
+    if not settings.media_retrieval_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Media retrieval is disabled.",
+        )
+
+
+router = APIRouter(
+    prefix="/retrieval",
+    tags=["retrieval"],
+    dependencies=[Depends(require_retrieval_enabled)],
+)
 logger = get_logger(__name__)
 
 

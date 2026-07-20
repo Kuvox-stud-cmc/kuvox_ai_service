@@ -23,9 +23,11 @@ def _state(**statuses: bool) -> SimpleNamespace:
     )
 
 
-def _settings(*, cache_enabled: bool) -> Settings:
+def _settings(*, cache_enabled: bool, semantic_enabled: bool = True) -> Settings:
     return Settings(
         cache_enabled=cache_enabled,
+        media_ingestion_enabled=semantic_enabled,
+        media_retrieval_enabled=semantic_enabled,
         s3_access_key="test",
         s3_secret_key="test",
     )
@@ -67,6 +69,25 @@ async def test_required_failure_is_unhealthy() -> None:
     )
     assert response.status_code == 503
     assert result.status == "unhealthy"
+
+
+@pytest.mark.asyncio
+async def test_semantic_dependencies_are_disabled_without_health_probes() -> None:
+    response = Response()
+    state = _state(kuzu=False, qdrant=False)
+    result = await ready(
+        response,
+        cast(AppState, state),
+        _settings(cache_enabled=False, semantic_enabled=False),
+    )
+
+    assert response.status_code == 200
+    assert result.status == "healthy"
+    semantic = {dep.name: dep for dep in result.dependencies if dep.name in {"kuzu", "qdrant"}}
+    assert semantic["kuzu"].status == "disabled"
+    assert semantic["qdrant"].status == "disabled"
+    state.kuzu.health_check.assert_not_awaited()
+    state.qdrant.health_check.assert_not_awaited()
 
 
 def test_metrics_route_is_registered_without_raw_identifier_labels() -> None:

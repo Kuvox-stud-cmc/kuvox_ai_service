@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production"]
@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
     run_workers: bool = True
     metrics_enabled: bool = True
+    media_ingestion_enabled: bool = False
+    media_retrieval_enabled: bool = False
 
     # --- Kuzu ------------------------------------------------------------
     kuzu_db_path: Path = Path("./data/kuzu")
@@ -206,6 +208,17 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.environment == "development"
+
+    @field_validator(
+        "media_ingestion_enabled",
+        "media_retrieval_enabled",
+        mode="before",
+    )
+    @classmethod
+    def require_explicit_true(cls, value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        return isinstance(value, str) and value.strip().lower() == "true"
 
     @model_validator(mode="after")
     def normalize_optional_secrets(self) -> Settings:
