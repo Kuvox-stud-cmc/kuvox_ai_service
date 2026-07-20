@@ -5,10 +5,12 @@ from typing import Any, cast
 
 from qdrant_client import models
 
+from kuvox_ai.cache import CacheRead, CacheStore, ReadOutcome, WriteOutcome
 from kuvox_ai.infrastructure import KuzuClient, QdrantClient
 from kuvox_ai.modules.ingestion.text_encoder import TextEmbeddingEncoder
 from kuvox_ai.modules.retrieval import RetrievalService
 from kuvox_ai.modules.retrieval.models import VideoEditorRetrievalQuery
+from kuvox_ai.modules.retrieval.query_embedding_cache import CachedQueryTextEmbeddingEncoder
 
 
 class FakeTextEncoder:
@@ -18,6 +20,31 @@ class FakeTextEncoder:
     async def encode_texts(self, texts: list[str]) -> list[list[float]]:
         self.texts.append(texts)
         return [[0.1, 0.2, 0.3]]
+
+
+class MemoryCache:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.values: dict[str, bytes] = {}
+        self.fail = fail
+
+    async def get(self, key: str) -> CacheRead:
+        if self.fail:
+            raise ConnectionError("Redis unavailable")
+        value = self.values.get(key)
+        return (
+            CacheRead(ReadOutcome.HIT, value) if value is not None else CacheRead(ReadOutcome.MISS)
+        )
+
+    async def set(self, key: str, value: bytes, ttl_seconds: int) -> WriteOutcome:
+        del ttl_seconds
+        if self.fail:
+            raise ConnectionError("Redis unavailable")
+        self.values[key] = value
+        return WriteOutcome.SUCCESS
+
+    async def delete(self, key: str) -> WriteOutcome:
+        self.values.pop(key, None)
+        return WriteOutcome.SUCCESS
 
 
 class FakeQdrantWrapper:
@@ -156,6 +183,66 @@ async def test_video_editor_retrieval_fuses_duplicate_shots_and_preserves_eviden
     assert result.total_candidates_considered == 3
 
 
+async def test_identical_retrieval_requests_share_query_embedding_and_keep_equivalent_dto() -> None:
+    qdrant = FakeQdrantNativeClient(
+        hits_by_collection={
+            "shots_transcript": [hit("shot-1", "media-1", 0.0, 4.0, 0.8, text="cached evidence")]
+        }
+    )
+    authoritative = FakeTextEncoder()
+    cached_encoder = CachedQueryTextEmbeddingEncoder(
+        authoritative,
+        cache=cast(CacheStore, MemoryCache()),
+        enabled=True,
+        model_id="model/test",
+        dimension=3,
+    )
+    svc = service(qdrant=qdrant, encoder=cached_encoder)
+    query = VideoEditorRetrievalQuery(
+        projectId="project-1",
+        mediaIds=["media-1"],
+        query="same retrieval query",
+        modalities=["transcript"],
+        expandGraph=False,
+    )
+
+    first = await svc.retrieve_video_editor(query)
+    second = await svc.retrieve_video_editor(query)
+
+    assert first == second
+    assert authoritative.texts == [["same retrieval query"]]
+
+
+async def test_redis_outage_fallback_keeps_retrieval_dto_equivalent() -> None:
+    hits = {"shots_transcript": [hit("shot-1", "media-1", 0.0, 4.0, 0.8, text="fallback evidence")]}
+    direct_encoder = FakeTextEncoder()
+    fallback_encoder = FakeTextEncoder()
+    direct = service(qdrant=FakeQdrantNativeClient(hits_by_collection=hits), encoder=direct_encoder)
+    cached_fallback = CachedQueryTextEmbeddingEncoder(
+        fallback_encoder,
+        cache=cast(CacheStore, MemoryCache(fail=True)),
+        enabled=True,
+        model_id="model/test",
+        dimension=3,
+    )
+    with_outage = service(
+        qdrant=FakeQdrantNativeClient(hits_by_collection=hits),
+        encoder=cached_fallback,
+    )
+    query = VideoEditorRetrievalQuery(
+        projectId="project-1",
+        mediaIds=["media-1"],
+        query="fallback query",
+        modalities=["transcript"],
+        expandGraph=False,
+    )
+
+    assert await with_outage.retrieve_video_editor(query) == await direct.retrieve_video_editor(
+        query
+    )
+    assert fallback_encoder.texts == direct_encoder.texts == [["fallback query"]]
+
+
 async def test_video_editor_retrieval_returns_warnings_for_degraded_dependencies() -> None:
     qdrant = FakeQdrantNativeClient(
         collections={"shots_transcript"},
@@ -186,12 +273,12 @@ def service(
     *,
     qdrant: FakeQdrantNativeClient,
     kuzu: FakeKuzu | None = None,
-    encoder: FakeTextEncoder | None = None,
+    encoder: TextEmbeddingEncoder | None = None,
 ) -> RetrievalService:
     return RetrievalService(
         kuzu=cast(KuzuClient, kuzu or FakeKuzu()),
         qdrant=cast(QdrantClient, FakeQdrantWrapper(qdrant)),
-        text_encoder=cast(TextEmbeddingEncoder, encoder or FakeTextEncoder()),
+        text_encoder=encoder or FakeTextEncoder(),
     )
 
 

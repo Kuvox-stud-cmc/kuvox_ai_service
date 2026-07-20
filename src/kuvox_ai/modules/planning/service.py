@@ -23,7 +23,7 @@ from kuvox_ai.modules.planning.models import (
     VideoEditorTimelineItemSummary,
     VideoEditorTrackSummary,
 )
-from kuvox_ai.modules.retrieval import RetrievalService
+from kuvox_ai.modules.retrieval import CachedVideoEditorRetrievalService, RetrievalService
 from kuvox_ai.schemas import Plan
 
 logger = get_logger(__name__)
@@ -54,7 +54,12 @@ class PlanningService:
     before the call returns.
     """
 
-    def __init__(self, *, llm: LLMClient, retrieval: RetrievalService) -> None:
+    def __init__(
+        self,
+        *,
+        llm: LLMClient,
+        retrieval: RetrievalService | CachedVideoEditorRetrievalService,
+    ) -> None:
         self._llm = llm
         self._retrieval = retrieval
 

@@ -14,6 +14,8 @@ import uvicorn
 from aio_pika.abc import AbstractIncomingMessage
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.responses import Response
 
 from kuvox_ai.api.middleware import RequestLoggingMiddleware
 from kuvox_ai.api.routes import (
@@ -23,7 +25,9 @@ from kuvox_ai.api.routes import (
     retrieval_router,
 )
 from kuvox_ai.api.state import AppState
+from kuvox_ai.cache import build_cache_store
 from kuvox_ai.config import Settings, get_settings
+from kuvox_ai.distributed_lock import build_lock_store
 from kuvox_ai.infrastructure import (
     KuzuClient,
     ObjectStorageClient,
@@ -35,10 +39,20 @@ from kuvox_ai.infrastructure import (
 from kuvox_ai.infrastructure.rabbitmq_client import retry_attempt
 from kuvox_ai.logging import configure_logging, get_logger
 from kuvox_ai.modules.ingestion import IngestionService
+from kuvox_ai.modules.ingestion.audio_embedding_cache import build_audio_embedding_encoder
+from kuvox_ai.modules.ingestion.text_embedding_cache import (
+    build_ingestion_text_embedding_encoder,
+)
+from kuvox_ai.modules.ingestion.text_encoder import SentenceTransformerTextEncoder
+from kuvox_ai.modules.ingestion.visual_embedding_cache import build_visual_embedding_encoder
 from kuvox_ai.modules.media_optimization import MediaOptimizationService, ffmpeg
 from kuvox_ai.modules.planning import PlanningService
 from kuvox_ai.modules.rendering import RenderingService
-from kuvox_ai.modules.retrieval import RetrievalService
+from kuvox_ai.modules.retrieval import (
+    CachedQueryTextEmbeddingEncoder,
+    CachedVideoEditorRetrievalService,
+    RetrievalService,
+)
 from kuvox_ai.modules.sandbox import SandboxService
 from kuvox_ai.workers import (
     ingestion_worker,
@@ -56,15 +70,63 @@ def _build_state(settings: Settings) -> AppState:
     rabbitmq = RabbitMQClient.from_settings(settings)
     storage = ObjectStorageClient.from_settings(settings)
     llm = build_llm_client(settings)
+    cache = build_cache_store(settings, redis)
+    locks = build_lock_store(settings, redis)
 
-    retrieval = RetrievalService(
+    query_text_encoder = CachedQueryTextEmbeddingEncoder(
+        SentenceTransformerTextEncoder(
+            model_name=settings.text_embedding_model_name,
+            device=settings.text_embedding_device,
+            batch_size=settings.text_embedding_batch_size,
+        ),
+        cache=cache,
+        enabled=settings.cache_enabled and settings.query_embedding_cache_enabled,
+        model_id=settings.text_embedding_model_name,
+        dimension=settings.text_embedding_dim,
+        ttl_seconds=settings.text_embedding_cache_ttl_seconds,
+        key_prefix=settings.cache_key_prefix,
+        legacy_read_enabled=settings.text_embedding_cache_legacy_read_enabled,
+        lock_store=locks,
+        single_flight_enabled=(
+            settings.cache_enabled and settings.query_embedding_single_flight_enabled
+        ),
+        lock_ttl_seconds=settings.single_flight_lock_ttl_seconds,
+        lock_wait_seconds=settings.single_flight_wait_seconds,
+        lock_poll_seconds=settings.single_flight_poll_milliseconds / 1000,
+    )
+    ingestion_text_encoder = build_ingestion_text_embedding_encoder(settings, cache)
+    visual_encoder = build_visual_embedding_encoder(settings, cache)
+    audio_encoder = build_audio_embedding_encoder(settings, cache)
+    authoritative_retrieval = RetrievalService(
         kuzu=kuzu,
         qdrant=qdrant,
+        text_encoder=query_text_encoder,
         transcript_collection_name=settings.transcript_collection_name,
         ocr_collection_name=settings.ocr_collection_name,
         text_embedding_model_name=settings.text_embedding_model_name,
         text_embedding_device=settings.text_embedding_device,
         text_embedding_batch_size=settings.text_embedding_batch_size,
+    )
+    retrieval = CachedVideoEditorRetrievalService(
+        authoritative_retrieval,
+        cache=cache,
+        locks=locks,
+        enabled=settings.cache_enabled and settings.retrieval_cache_enabled,
+        single_flight_enabled=(
+            settings.cache_enabled
+            and settings.retrieval_cache_enabled
+            and settings.retrieval_single_flight_enabled
+        ),
+        ttl_seconds=settings.retrieval_cache_ttl_seconds,
+        max_payload_bytes=settings.cache_max_payload_bytes,
+        key_prefix=settings.cache_key_prefix,
+        transcript_collection_name=settings.transcript_collection_name,
+        ocr_collection_name=settings.ocr_collection_name,
+        text_embedding_model_name=settings.text_embedding_model_name,
+        text_embedding_dimension=settings.text_embedding_dim,
+        lock_ttl_seconds=settings.single_flight_lock_ttl_seconds,
+        lock_wait_seconds=settings.single_flight_wait_seconds,
+        lock_poll_seconds=settings.single_flight_poll_milliseconds / 1000,
     )
     media_optimization = MediaOptimizationService(
         storage=storage,
@@ -85,6 +147,7 @@ def _build_state(settings: Settings) -> AppState:
         rabbitmq=rabbitmq,
         storage=storage,
         llm=llm,
+        cache=cache,
         ingestion=IngestionService(
             kuzu=kuzu,
             qdrant=qdrant,
@@ -99,6 +162,9 @@ def _build_state(settings: Settings) -> AppState:
             media_audio_collection_name=settings.media_audio_collection_name,
             media_transcript_collection_name=settings.media_transcript_collection_name,
             media_ocr_collection_name=settings.media_ocr_collection_name,
+            text_encoder=ingestion_text_encoder,
+            visual_encoder=visual_encoder,
+            audio_encoder=audio_encoder,
             text_embedding_model_name=settings.text_embedding_model_name,
             text_embedding_dim=settings.text_embedding_dim,
             text_embedding_device=settings.text_embedding_device,
@@ -293,6 +359,12 @@ def create_app() -> FastAPI:
     app.include_router(retrieval_router)
     app.include_router(planning_router)
     app.include_router(admin_router)
+    if settings.metrics_enabled:
+
+        @app.get("/metrics", include_in_schema=False)
+        async def metrics() -> Response:
+            return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
     return app
 
 

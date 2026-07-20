@@ -20,6 +20,11 @@ services:
       VITE_AI_SERVICE_URL: ${VITE_AI_SERVICE_URL:-http://kuvox-ai:8000}
       AI_SERVICE_URL: ${AI_SERVICE_URL:-http://kuvox-ai:8000}
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      KUVOX_BFF_COALESCING_ENABLED: "${KUVOX_BFF_COALESCING_ENABLED:-false}"
+      KUVOX_BFF_COALESCING_RESOURCES: "${KUVOX_BFF_COALESCING_RESOURCES:-auth_me,studio_memberships,retrieval_project_media}"
+      KUVOX_BFF_COALESCING_MAX_IN_FLIGHT: "${KUVOX_BFF_COALESCING_MAX_IN_FLIGHT:-256}"
+      KUVOX_BFF_COALESCING_DEADLINE_MS: "${KUVOX_BFF_COALESCING_DEADLINE_MS:-5000}"
+      KUVOX_BFF_METRICS_ENABLED: "${KUVOX_BFF_METRICS_ENABLED:-false}"
     depends_on:
       - kuvox-api
       - kuvox-ai
@@ -33,12 +38,38 @@ services:
       # Bound to localhost only — the host Nginx reverse proxy fronts it with TLS.
       - "127.0.0.1:5000:5000"
     env_file: .env
+    environment:
+      ConnectionStrings__Redis: "redis-api:6379,user=kuvox-api,password=${REDIS_API_PASSWORD:?Set REDIS_API_PASSWORD in .env}"
+      Caching__Enabled: "${API_CACHING_ENABLED:-false}"
+      Caching__HttpValidatorsEnabled: "${API_HTTP_VALIDATORS_ENABLED:-false}"
+      Caching__BusinessReads__Enabled: "${API_BUSINESS_READ_CACHING_ENABLED:-false}"
+      Caching__UserSettings__Enabled: "${API_USER_SETTINGS_CACHING_ENABLED:-false}"
+      Caching__Studio__Enabled: "${API_STUDIO_CACHING_ENABLED:-false}"
+      Caching__Projects__Enabled: "${API_PROJECTS_CACHING_ENABLED:-false}"
+      Caching__Media__Enabled: "${API_MEDIA_CACHING_ENABLED:-false}"
+      Caching__Albums__Enabled: "${API_ALBUMS_CACHING_ENABLED:-false}"
+      Caching__StorageUsage__Enabled: "${API_STORAGE_USAGE_CACHING_ENABLED:-false}"
+      Caching__Tasks__Enabled: "${API_TASKS_CACHING_ENABLED:-false}"
+      Caching__Notifications__Enabled: "${API_NOTIFICATION_PAGES_CACHING_ENABLED:-false}"
+      Caching__NotificationCount__Enabled: "${API_NOTIFICATION_COUNT_CACHING_ENABLED:-false}"
+      Caching__EditorDocuments__Enabled: "${API_EDITOR_DOCUMENTS_CACHING_ENABLED:-false}"
+      Caching__RenderJobs__Enabled: "${API_RENDER_JOBS_CACHING_ENABLED:-false}"
+      Caching__StampedeProtectionEnabled: "${API_STAMPEDE_PROTECTION_ENABLED:-false}"
+      Caching__StudioUsageSingleFlightEnabled: "${API_STUDIO_USAGE_SINGLE_FLIGHT_ENABLED:-false}"
+      Caching__LockTtlMilliseconds: "${API_LOCK_TTL_MILLISECONDS:-5000}"
+      Caching__LockWaitMilliseconds: "${API_LOCK_WAIT_MILLISECONDS:-2000}"
+      Caching__LockPollMilliseconds: "${API_LOCK_POLL_MILLISECONDS:-50}"
+      Caching__StudioSettingsPrewarmEnabled: "${API_STUDIO_SETTINGS_PREWARM_ENABLED:-false}"
+      Caching__TaskReferencePrewarmEnabled: "${API_TASK_REFERENCE_PREWARM_ENABLED:-false}"
+      Caching__PrewarmQueueCapacity: "${API_PREWARM_QUEUE_CAPACITY:-256}"
+      Caching__PrewarmStartupDelayMilliseconds: "${API_PREWARM_STARTUP_DELAY_MILLISECONDS:-5000}"
+      Caching__PrewarmStartupStudioIds__0: "${API_PREWARM_STARTUP_STUDIO_ID_0:-}"
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis-api:
         condition: service_healthy
     networks:
       - kuvox
@@ -56,7 +87,32 @@ services:
       KUVOX_RUN_WORKERS: "${KUVOX_RUN_WORKERS:-true}"
       KUVOX_QDRANT_HOST: "qdrant"
       KUVOX_QDRANT_PORT: "6333"
-      KUVOX_REDIS_URL: "redis://redis:6379/0"
+      KUVOX_REDIS_URL: "redis://redis-ai:6379/0"
+      KUVOX_REDIS_USERNAME: "kuvox-ai"
+      KUVOX_REDIS_PASSWORD: "${REDIS_AI_PASSWORD:?Set REDIS_AI_PASSWORD in .env}"
+      KUVOX_CACHE_ENABLED: "${KUVOX_CACHE_ENABLED:-false}"
+      KUVOX_CACHE_KEY_PREFIX: "${KUVOX_CACHE_KEY_PREFIX:-kuvox:v1}"
+      KUVOX_CACHE_TTL_JITTER_PERCENT: "${KUVOX_CACHE_TTL_JITTER_PERCENT:-10}"
+      KUVOX_CACHE_MAX_PAYLOAD_BYTES: "${KUVOX_CACHE_MAX_PAYLOAD_BYTES:-1048576}"
+      KUVOX_QUERY_EMBEDDING_CACHE_ENABLED: "${KUVOX_QUERY_EMBEDDING_CACHE_ENABLED:-false}"
+      KUVOX_QUERY_EMBEDDING_SINGLE_FLIGHT_ENABLED: "${KUVOX_QUERY_EMBEDDING_SINGLE_FLIGHT_ENABLED:-false}"
+      KUVOX_INGESTION_TEXT_EMBEDDING_CACHE_ENABLED: "${KUVOX_INGESTION_TEXT_EMBEDDING_CACHE_ENABLED:-false}"
+      KUVOX_TEXT_EMBEDDING_CACHE_TTL_SECONDS: "${KUVOX_TEXT_EMBEDDING_CACHE_TTL_SECONDS:-604800}"
+      KUVOX_TEXT_EMBEDDING_CACHE_BUDGET_BYTES: "${KUVOX_TEXT_EMBEDDING_CACHE_BUDGET_BYTES:-100663296}"
+      KUVOX_TEXT_EMBEDDING_CACHE_LEGACY_READ_ENABLED: "${KUVOX_TEXT_EMBEDDING_CACHE_LEGACY_READ_ENABLED:-true}"
+      KUVOX_VISUAL_EMBEDDING_CACHE_ENABLED: "${KUVOX_VISUAL_EMBEDDING_CACHE_ENABLED:-false}"
+      KUVOX_VISUAL_EMBEDDING_CACHE_TTL_SECONDS: "${KUVOX_VISUAL_EMBEDDING_CACHE_TTL_SECONDS:-86400}"
+      KUVOX_VISUAL_EMBEDDING_CACHE_BUDGET_BYTES: "${KUVOX_VISUAL_EMBEDDING_CACHE_BUDGET_BYTES:-33554432}"
+      KUVOX_AUDIO_EMBEDDING_CACHE_ENABLED: "${KUVOX_AUDIO_EMBEDDING_CACHE_ENABLED:-false}"
+      KUVOX_AUDIO_EMBEDDING_CACHE_TTL_SECONDS: "${KUVOX_AUDIO_EMBEDDING_CACHE_TTL_SECONDS:-86400}"
+      KUVOX_AUDIO_EMBEDDING_CACHE_BUDGET_BYTES: "${KUVOX_AUDIO_EMBEDDING_CACHE_BUDGET_BYTES:-67108864}"
+      KUVOX_RETRIEVAL_CACHE_ENABLED: "${KUVOX_RETRIEVAL_CACHE_ENABLED:-false}"
+      KUVOX_RETRIEVAL_CACHE_TTL_SECONDS: "${KUVOX_RETRIEVAL_CACHE_TTL_SECONDS:-60}"
+      KUVOX_RETRIEVAL_CACHE_BUDGET_BYTES: "${KUVOX_RETRIEVAL_CACHE_BUDGET_BYTES:-67108864}"
+      KUVOX_RETRIEVAL_SINGLE_FLIGHT_ENABLED: "${KUVOX_RETRIEVAL_SINGLE_FLIGHT_ENABLED:-false}"
+      KUVOX_SINGLE_FLIGHT_LOCK_TTL_SECONDS: "${KUVOX_SINGLE_FLIGHT_LOCK_TTL_SECONDS:-30}"
+      KUVOX_SINGLE_FLIGHT_WAIT_SECONDS: "${KUVOX_SINGLE_FLIGHT_WAIT_SECONDS:-15}"
+      KUVOX_SINGLE_FLIGHT_POLL_MILLISECONDS: "${KUVOX_SINGLE_FLIGHT_POLL_MILLISECONDS:-50}"
       KUVOX_RABBITMQ_URL: "amqp://${RABBITMQ_DEFAULT_USER:-kuvox}:${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in .env}@rabbitmq:5672/"
       KUVOX_S3_ENDPOINT_URL: "http://seaweedfs-s3:8333"
       KUVOX_MEDIA_WORK_DIR: "/tmp/kuvox-media"
@@ -69,7 +125,7 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
-      redis:
+      redis-ai:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -120,15 +176,46 @@ services:
     networks:
       - kuvox
 
-  redis:
+  redis-api:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
-      - redis-data:/data
+      - redis-api-data:/data
+      - ./deploy/redis/redis.conf:/etc/redis/redis.conf:ro
+      - ./deploy/redis/entrypoint-single.sh:/usr/local/bin/kuvox-redis-entrypoint:ro
+    environment:
+      REDIS_USERNAME: kuvox-api
+      REDIS_PASSWORD: ${REDIS_API_PASSWORD:?Set REDIS_API_PASSWORD in .env}
+      REDIS_KEY_PATTERN: kuvox:v1:api:*
+      REDIS_MAXMEMORY: 128mb
+    entrypoint: ["/usr/local/bin/kuvox-redis-entrypoint"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --user kuvox-api -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - kuvox
+
+  redis-ai:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis-ai-data:/data
+      - ./deploy/redis/redis.conf:/etc/redis/redis.conf:ro
+      - ./deploy/redis/entrypoint-single.sh:/usr/local/bin/kuvox-redis-entrypoint:ro
+    environment:
+      REDIS_USERNAME: kuvox-ai
+      REDIS_PASSWORD: ${REDIS_AI_PASSWORD:?Set REDIS_AI_PASSWORD in .env}
+      REDIS_KEY_PATTERN: kuvox:v1:ai:*
+      REDIS_MAXMEMORY: 384mb
+    entrypoint: ["/usr/local/bin/kuvox-redis-entrypoint"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --user kuvox-ai -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -208,7 +295,8 @@ services:
 volumes:
   postgres-data:
   qdrant-data:
-  redis-data:
+  redis-api-data:
+  redis-ai-data:
   rabbitmq-data:
   seaweedfs_master:
   seaweedfs_volume:

@@ -4,8 +4,13 @@ import json
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
+from kuvox_ai.cache import DisabledCacheStore
+from kuvox_ai.config import Settings
 from kuvox_ai.modules.ingestion import IngestionCompleted
-from kuvox_ai.workers.ingestion_worker import handle_message_body
+from kuvox_ai.modules.ingestion.audio_embedding_cache import CachedAudioEmbeddingEncoder
+from kuvox_ai.modules.ingestion.text_embedding_cache import CachedIngestionTextEmbeddingEncoder
+from kuvox_ai.modules.ingestion.visual_embedding_cache import CachedVisualEmbeddingEncoder
+from kuvox_ai.workers.ingestion_worker import _close_resources, build_service, handle_message_body
 
 
 def requested_body() -> bytes:
@@ -171,3 +176,42 @@ async def test_worker_invalid_message_dlqs_when_queue_context_present(
     service.ingest.assert_not_awaited()
     mock_rabbitmq.publish_dlq.assert_awaited_once()
     mock_rabbitmq.publish_json.assert_not_awaited()
+
+
+def test_worker_service_uses_cached_ingestion_text_encoder(
+    mock_storage: AsyncMock,
+    mock_kuzu: AsyncMock,
+    mock_qdrant: AsyncMock,
+) -> None:
+    settings = Settings(
+        cache_enabled=True,
+        ingestion_text_embedding_cache_enabled=True,
+        visual_embedding_cache_enabled=True,
+        audio_embedding_cache_enabled=True,
+        s3_access_key="test",
+        s3_secret_key="test",
+    )
+
+    service = build_service(
+        settings,
+        mock_storage,
+        mock_kuzu,
+        mock_qdrant,
+        DisabledCacheStore(),
+    )
+
+    assert isinstance(service._text_encoder, CachedIngestionTextEmbeddingEncoder)
+    assert isinstance(service._visual_encoder, CachedVisualEmbeddingEncoder)
+    assert isinstance(service._audio_encoder, CachedAudioEmbeddingEncoder)
+
+
+async def test_worker_shutdown_closes_every_resource_after_one_failure() -> None:
+    first = AsyncMock(side_effect=RuntimeError("close failed"))
+    second = AsyncMock()
+    third = AsyncMock()
+
+    await _close_resources(first, second, third)
+
+    first.assert_awaited_once()
+    second.assert_awaited_once()
+    third.assert_awaited_once()

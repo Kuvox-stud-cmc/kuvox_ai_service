@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     cors_origins: str = "*"
     run_workers: bool = True
+    metrics_enabled: bool = True
 
     # --- Kuzu ------------------------------------------------------------
     kuzu_db_path: Path = Path("./data/kuzu")
@@ -52,7 +53,37 @@ class Settings(BaseSettings):
     qdrant_https: bool = False
 
     # --- Redis -----------------------------------------------------------
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://localhost:6380/0"
+    redis_username: str | None = None
+    redis_password: str | None = None
+    redis_connect_timeout_seconds: float = 0.5
+    redis_operation_timeout_seconds: float = 0.5
+    cache_enabled: bool = False
+    cache_key_prefix: str = "kuvox:v1"
+    cache_ttl_jitter_percent: int = 10
+    cache_max_payload_bytes: int = 1_048_576
+    text_embedding_cache_ttl_seconds: int = 604_800
+    text_embedding_cache_budget_bytes: int = 100_663_296
+    text_embedding_cache_legacy_read_enabled: bool = True
+    query_embedding_cache_enabled: bool = False
+    query_embedding_single_flight_enabled: bool = False
+    ingestion_text_embedding_cache_enabled: bool = False
+    visual_embedding_cache_enabled: bool = False
+    audio_embedding_cache_enabled: bool = False
+    visual_embedding_cache_ttl_seconds: int = 86_400
+    audio_embedding_cache_ttl_seconds: int = 86_400
+    visual_embedding_cache_budget_bytes: int = 33_554_432
+    audio_embedding_cache_budget_bytes: int = 67_108_864
+    # Compatibility-only inputs for deployments that have not split Phase 3 flags yet.
+    visual_audio_embedding_cache_enabled: bool = False
+    visual_audio_embedding_cache_ttl_seconds: int = 86_400
+    retrieval_cache_enabled: bool = False
+    retrieval_cache_ttl_seconds: int = 60
+    retrieval_cache_budget_bytes: int = 67_108_864
+    retrieval_single_flight_enabled: bool = False
+    single_flight_lock_ttl_seconds: float = 30
+    single_flight_wait_seconds: float = 15
+    single_flight_poll_milliseconds: int = 50
 
     # --- RabbitMQ --------------------------------------------------------
     rabbitmq_url: str = "amqp://kuvox:kuvox@localhost:5672/"
@@ -180,7 +211,23 @@ class Settings(BaseSettings):
     def normalize_optional_secrets(self) -> Settings:
         if self.qdrant_api_key is not None and not self.qdrant_api_key.strip():
             self.qdrant_api_key = None
+        if self.redis_username is not None and not self.redis_username.strip():
+            self.redis_username = None
+        if self.redis_password is not None and not self.redis_password.strip():
+            self.redis_password = None
 
+        return self
+
+    @model_validator(mode="after")
+    def apply_visual_audio_cache_compatibility_fallbacks(self) -> Settings:
+        if "visual_embedding_cache_enabled" not in self.model_fields_set:
+            self.visual_embedding_cache_enabled = self.visual_audio_embedding_cache_enabled
+        if "audio_embedding_cache_enabled" not in self.model_fields_set:
+            self.audio_embedding_cache_enabled = self.visual_audio_embedding_cache_enabled
+        if "visual_embedding_cache_ttl_seconds" not in self.model_fields_set:
+            self.visual_embedding_cache_ttl_seconds = self.visual_audio_embedding_cache_ttl_seconds
+        if "audio_embedding_cache_ttl_seconds" not in self.model_fields_set:
+            self.audio_embedding_cache_ttl_seconds = self.visual_audio_embedding_cache_ttl_seconds
         return self
 
     @model_validator(mode="after")

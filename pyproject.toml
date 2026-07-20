@@ -20,6 +20,7 @@ dependencies = [
 
     # Logging
     "structlog>=24.4",
+    "prometheus-client>=0.21,<1.0",
 
     # Infrastructure clients
     "kuzu>=0.7",
@@ -158,4 +159,5 @@ addopts = [
 ]
 markers = [
     "integration: tests that require docker-compose services running",
+    "redis_integration: tests that require only a real Redis service",
 ]

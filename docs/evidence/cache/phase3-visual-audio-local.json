@@ -1,0 +1,168 @@
+{
+  "audio": {
+    "byteChangeDifferent": true,
+    "byteChangeDurationMs": 37.624,
+    "byteChangeEncoderInputs": 1,
+    "coldDurationMs": 38.873,
+    "coldEncoderInputs": 1,
+    "corruptDurationMs": 37.091,
+    "corruptEncoderInputs": 1,
+    "corruptEquivalent": true,
+    "disabledDurationsMs": [
+      4777.022,
+      34.917
+    ],
+    "disabledEncoderInputs": 2,
+    "disabledEquivalent": true,
+    "duplicateEquivalent": true,
+    "metricDelta": {
+      "byteChange": {
+        "kuvox_audio_embedding_cache_operations_total{outcome=\"miss\"}": 1.0,
+        "kuvox_audio_embedding_cache_operations_total{outcome=\"write\"}": 1.0,
+        "kuvox_audio_embedding_encoder_inputs_total{outcome=\"miss\"}": 1.0
+      },
+      "cold": {
+        "kuvox_audio_embedding_cache_operations_total{outcome=\"miss\"}": 3.0,
+        "kuvox_audio_embedding_cache_operations_total{outcome=\"write\"}": 1.0,
+        "kuvox_audio_embedding_encoder_inputs_total{outcome=\"miss\"}": 1.0
+      },
+      "corrupt": {
+        "kuvox_audio_embedding_cache_operations_total{outcome=\"corrupt_data\"}": 1.0,
+        "kuvox_audio_embedding_cache_operations_total{outcome=\"write\"}": 1.0,
+        "kuvox_audio_embedding_encoder_inputs_total{outcome=\"corrupt_data\"}": 1.0
+      },
+      "warm": {
+        "kuvox_audio_embedding_cache_operations_total{outcome=\"hit\"}": 1.0
+      }
+    },
+    "redis": {
+      "keyCardinality": 2,
+      "memoryBytes": 10832,
+      "payloadBytes": {
+        "maximum": 4169,
+        "minimum": 4169,
+        "total": 8338
+      }
+    },
+    "redisCommandDelta": {
+      "byteChange": {
+        "mget:success": 1.0,
+        "pipeline_set:success": 1.0
+      },
+      "cold": {
+        "mget:success": 1.0,
+        "pipeline_set:success": 1.0
+      },
+      "corrupt": {
+        "mget:success": 1.0,
+        "pipeline_set:success": 1.0
+      },
+      "warm": {
+        "mget:success": 1.0
+      }
+    },
+    "redisOutageDurationMs": 35.07,
+    "redisOutageEncoderInputs": 1,
+    "redisOutageEquivalent": true,
+    "repairedMagic": "KAEV",
+    "vectorSha256": {
+      "changed": "90ab2128a15133bd1113083f6026f0ef5f6ddd5e667a348c1e6953aa30611c78",
+      "original": "27118f97a0a64b649c826b473b539aa6cafbcd85c1d38748661f27a5665a6cb9"
+    },
+    "warmDurationMs": 1.726,
+    "warmEncoderInputs": 0,
+    "warmEquivalent": true
+  },
+  "fixtureSha256": {
+    "audioChanged": "251e1c82df27d24d584eec984bf97c9e7d931f1569703f6f65bcfd5b00926747",
+    "audioDuplicate": "d9a9bc746582bc81f0ea23cc9ee8dac5ab25bb132ee2d80d60defeb8719e2545",
+    "audioOriginal": "d9a9bc746582bc81f0ea23cc9ee8dac5ab25bb132ee2d80d60defeb8719e2545",
+    "imageChanged": "8e22df63a2543154384cbb5c23f0a04ade63ac6de1380868b75de5abb9fa6598",
+    "imageDuplicate": "05ab53d93257b92cae1f6dbf1a6254247d8ab695cfa924dee9b6d75acbbd1709",
+    "imageOriginal": "05ab53d93257b92cae1f6dbf1a6254247d8ab695cfa924dee9b6d75acbbd1709"
+  },
+  "modelIdentities": {
+    "audio": "msclap:model=CLAP;config=package-default-audio-v1;dimension=1024;versions=msclap=1.3.4,torch=2.12.1,librosa=0.10.2.post1,numpy=1.26.4,soundfile=0.14.0",
+    "visual": "openclip:model=ViT-B-32;pretrained=laion2b_s34b_b79k;dimension=512;versions=open-clip-torch=3.3.0,torch=2.12.1,torchvision=0.27.1,Pillow=12.3.0"
+  },
+  "pipelineIdentities": {
+    "audio": "preprocess=soundfile-float32-always-2d-channel-mean-v1;librosa-model-native-resample-v1;repeat-then-truncate-model-duration-v1;l2-epsilon-1e-12-v1;full-audio=ffmpeg-full-input-v1;mono;sample-rate=16000;codec=pcm_s16le;shot-audio=ffmpeg-seek-before-input-v1;start=6dp;duration=6dp;mono;sample-rate=48000;codec=pcm_s16le;clip-boundary=start=shot-start;end=shot-end;duration=max-zero-shot-duration-v1",
+    "visual": "preprocess=pil-open-rgb-openclip-transform-l2-clamp-1e-12-v1;frame-sampling=ffmpeg-input-seek-midpoint-v1;timestamp=6dp;frames=1;jpeg-quality=2;standalone-input=standalone-image-exact-file-bytes-v1"
+  },
+  "redisUrl": "redis://localhost:6380/15",
+  "schemaVersion": 1,
+  "visual": {
+    "byteChangeDifferent": true,
+    "byteChangeDurationMs": 22.26,
+    "byteChangeEncoderInputs": 1,
+    "coldDurationMs": 24.346,
+    "coldEncoderInputs": 1,
+    "corruptDurationMs": 22.329,
+    "corruptEncoderInputs": 1,
+    "corruptEquivalent": true,
+    "disabledDurationsMs": [
+      5431.197,
+      20.239
+    ],
+    "disabledEncoderInputs": 2,
+    "disabledEquivalent": true,
+    "duplicateEquivalent": true,
+    "metricDelta": {
+      "byteChange": {
+        "kuvox_visual_embedding_cache_operations_total{outcome=\"miss\"}": 1.0,
+        "kuvox_visual_embedding_cache_operations_total{outcome=\"write\"}": 1.0,
+        "kuvox_visual_embedding_encoder_inputs_total{outcome=\"miss\"}": 1.0
+      },
+      "cold": {
+        "kuvox_visual_embedding_cache_operations_total{outcome=\"miss\"}": 3.0,
+        "kuvox_visual_embedding_cache_operations_total{outcome=\"write\"}": 1.0,
+        "kuvox_visual_embedding_encoder_inputs_total{outcome=\"miss\"}": 1.0
+      },
+      "corrupt": {
+        "kuvox_visual_embedding_cache_operations_total{outcome=\"corrupt_data\"}": 1.0,
+        "kuvox_visual_embedding_cache_operations_total{outcome=\"write\"}": 1.0,
+        "kuvox_visual_embedding_encoder_inputs_total{outcome=\"corrupt_data\"}": 1.0
+      },
+      "warm": {
+        "kuvox_visual_embedding_cache_operations_total{outcome=\"hit\"}": 1.0
+      }
+    },
+    "redis": {
+      "keyCardinality": 2,
+      "memoryBytes": 5712,
+      "payloadBytes": {
+        "maximum": 2121,
+        "minimum": 2121,
+        "total": 4242
+      }
+    },
+    "redisCommandDelta": {
+      "byteChange": {
+        "mget:success": 1.0,
+        "pipeline_set:success": 1.0
+      },
+      "cold": {
+        "mget:success": 1.0,
+        "pipeline_set:success": 1.0
+      },
+      "corrupt": {
+        "mget:success": 1.0,
+        "pipeline_set:success": 1.0
+      },
+      "warm": {
+        "mget:success": 1.0
+      }
+    },
+    "redisOutageDurationMs": 22.345,
+    "redisOutageEncoderInputs": 1,
+    "redisOutageEquivalent": true,
+    "repairedMagic": "KVEV",
+    "vectorSha256": {
+      "changed": "c28d027de712e3d32db095e7999988887fb662598703318b7acba5a131394a9b",
+      "original": "0c7945bb320d3645b1bc7b0cc0524c58ed19c085669aadfc5273384596bdd6bd"
+    },
+    "warmDurationMs": 1.447,
+    "warmEncoderInputs": 0,
+    "warmEquivalent": true
+  }
+}

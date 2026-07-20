@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Modality = Literal["visual", "transcript", "audio", "ocr"]
 
@@ -45,6 +45,21 @@ class VideoEditorRetrievalQuery(_CamelModel):
     modalities: list[Modality] = Field(default_factory=_default_editor_modalities)
     top_k: int = Field(default=8, ge=1, le=50)
     expand_graph: bool = True
+    scope_revision: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_conflicting_scope_revisions(cls, value: Any) -> Any:
+        if (
+            isinstance(value, dict)
+            and "scopeRevision" in value
+            and "scope_revision" in value
+            and value["scopeRevision"] != value["scope_revision"]
+        ):
+            value = dict(value)
+            value["scopeRevision"] = None
+            value.pop("scope_revision", None)
+        return value
 
 
 class RetrievalEvidenceSnippet(_CamelModel):

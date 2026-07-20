@@ -12,6 +12,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from kuvox_ai.logging import get_logger
+from kuvox_ai.metrics import HTTP_LATENCY, HTTP_REQUESTS
 
 logger = get_logger(__name__)
 
@@ -41,7 +42,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             response.headers["x-kuvox-editor-correlation-id"] = editor_correlation_id
             return response
         finally:
-            duration_ms = (time.perf_counter() - start) * 1000
+            duration_seconds = time.perf_counter() - start
+            duration_ms = duration_seconds * 1000
+            route = getattr(request.scope.get("route"), "path", "unmatched")
+            HTTP_REQUESTS.labels("ai", request.method, route, str(status_code)).inc()
+            HTTP_LATENCY.labels("ai", request.method, route).observe(duration_seconds)
             logger.info(
                 "http.request",
                 status=status_code,

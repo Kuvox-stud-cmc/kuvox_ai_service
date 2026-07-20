@@ -51,19 +51,34 @@ Native Linux with Docker-published infra ports:
 ```env
 KUVOX_QDRANT_HOST=localhost
 KUVOX_QDRANT_HTTPS=false
-KUVOX_REDIS_URL=redis://localhost:6379/0
+KUVOX_REDIS_URL=redis://localhost:6380/0
 KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@localhost:5672/
 KUVOX_S3_ENDPOINT_URL=http://localhost:8333
 KUVOX_MEDIA_WORK_DIR=/tmp/kuvox-media
 KUVOX_INGESTION_WORK_DIR=/tmp/kuvox-ingestion
 ```
 
+Phase 0 includes the fail-open Redis foundation. Phases 1 and 2 add a shared, binary KTEV
+cache for video-editor query embeddings and ingestion transcript/OCR embeddings. Exact-byte
+KVEV visual and KAEV audio caches complete the ingestion embedding scope. Phase 7 adds
+trusted 60-second retrieval-result caching and advisory single-flight for query embeddings
+and retrieval recomputation. Bulk reads use `MGET` and valid writes use non-transactional
+pipelines. Every cache and coordination flag remains disabled by default. Graph neighbors
+are not cached separately. See
+[`CACHING.md`](CACHING.md) for schemas, identities, evidence, rollout, and rollback procedures.
+
+Health and observability endpoints are:
+
+- `/health/live` — process-only liveness.
+- `/health/ready` and `/health` — required dependency readiness; Redis can only degrade it.
+- `/metrics` — private Prometheus metrics when `KUVOX_METRICS_ENABLED=true`.
+
 Native macOS uses the same values as Linux:
 
 ```env
 KUVOX_QDRANT_HOST=localhost
 KUVOX_QDRANT_HTTPS=false
-KUVOX_REDIS_URL=redis://localhost:6379/0
+KUVOX_REDIS_URL=redis://localhost:6380/0
 KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@localhost:5672/
 KUVOX_S3_ENDPOINT_URL=http://localhost:8333
 KUVOX_MEDIA_WORK_DIR=/tmp/kuvox-media
@@ -75,7 +90,7 @@ Native Windows with Docker-published infra ports:
 ```env
 KUVOX_QDRANT_HOST=localhost
 KUVOX_QDRANT_HTTPS=false
-KUVOX_REDIS_URL=redis://localhost:6379/0
+KUVOX_REDIS_URL=redis://localhost:6380/0
 KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@localhost:5672/
 KUVOX_S3_ENDPOINT_URL=http://localhost:8333
 KUVOX_MEDIA_WORK_DIR=D:/Kuvox/.codex-tmp/kuvox-media
@@ -87,7 +102,7 @@ AI service running inside Docker Compose:
 ```env
 KUVOX_QDRANT_HOST=qdrant
 KUVOX_QDRANT_HTTPS=false
-KUVOX_REDIS_URL=redis://redis:6379/0
+KUVOX_REDIS_URL=redis://redis-ai:6379/0
 KUVOX_RABBITMQ_URL=amqp://kuvox:kuvox@rabbitmq:5672/
 KUVOX_S3_ENDPOINT_URL=http://seaweedfs-s3:8333
 KUVOX_MEDIA_WORK_DIR=/tmp/kuvox-media
@@ -229,6 +244,6 @@ No other code needs to change — every caller depends only on the
 
 ## What's *not* in this scaffold
 
-Intentionally absent: ML model loading, real processing, hard-coded LLM
-providers, authentication (handled upstream by the ASP.NET service),
-metrics/observability beyond logging, admin UI.
+Intentionally absent: hard-coded LLM providers, authentication (handled upstream by the
+ASP.NET service), public metrics exposure, and admin UI. Prometheus instrumentation exists
+for normalized HTTP requests, cache/Redis operations, and retrieval stages.

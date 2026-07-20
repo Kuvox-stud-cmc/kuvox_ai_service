@@ -13,6 +13,15 @@ from kuvox_ai.modules.media_optimization import ffmpeg
 
 logger = get_logger(__name__)
 
+FULL_AUDIO_SAMPLE_RATE = 16_000
+SHOT_AUDIO_SAMPLE_RATE = 48_000
+AUDIO_CLIP_TIMESTAMP_PRECISION = 6
+FULL_AUDIO_EXTRACTION_CONTRACT_ID = "ffmpeg-full-input-v1;mono;sample-rate=16000;codec=pcm_s16le"
+SHOT_AUDIO_EXTRACTION_CONTRACT_ID = (
+    "ffmpeg-seek-before-input-v1;start=6dp;duration=6dp;mono;sample-rate=48000;codec=pcm_s16le"
+)
+AUDIO_CLIP_BOUNDARY_CONTRACT_ID = "start=shot-start;end=shot-end;duration=max-zero-shot-duration-v1"
+
 
 @dataclass(frozen=True, slots=True)
 class ShotAudioClip:
@@ -68,7 +77,7 @@ class FFmpegAudioExtractor:
                 "-ac",
                 "1",
                 "-ar",
-                "16000",
+                str(FULL_AUDIO_SAMPLE_RATE),
                 "-c:a",
                 "pcm_s16le",
                 str(output_path),
@@ -92,16 +101,16 @@ class FFmpegAudioExtractor:
                     "ffmpeg",
                     "-y",
                     "-ss",
-                    f"{shot.start_seconds:.6f}",
+                    f"{shot.start_seconds:.{AUDIO_CLIP_TIMESTAMP_PRECISION}f}",
                     "-i",
                     str(video_path),
                     "-t",
-                    f"{clip_duration_seconds:.6f}",
+                    f"{clip_duration_seconds:.{AUDIO_CLIP_TIMESTAMP_PRECISION}f}",
                     "-vn",
                     "-ac",
                     "1",
                     "-ar",
-                    "48000",
+                    str(SHOT_AUDIO_SAMPLE_RATE),
                     "-c:a",
                     "pcm_s16le",
                     str(output_path),

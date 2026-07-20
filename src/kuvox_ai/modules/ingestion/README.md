@@ -13,6 +13,13 @@ Current MVP 3 behavior:
 - Samples one midpoint JPEG frame per detected shot with FFmpeg.
 - Encodes sampled frames with OpenCLIP using normalized visual embeddings.
 - Ensures the Qdrant `shots_visual` collection exists with cosine distance and the configured embedding dimension.
+
+Transcript and OCR text embeddings use the shared text-embedding cache only when both
+`KUVOX_CACHE_ENABLED` and `KUVOX_INGESTION_TEXT_EMBEDDING_CACHE_ENABLED` are true. This
+covers shot transcript/OCR plus audio transcript and image OCR. Exact-byte visual and audio
+embedding reuse is independently enabled by `KUVOX_VISUAL_EMBEDDING_CACHE_ENABLED` and
+`KUVOX_AUDIO_EMBEDDING_CACHE_ENABLED`. Both flags default to false. See
+[`CACHING.md`](../../../../CACHING.md). Qdrant writes remain uncached.
 - Deletes existing Qdrant visual points for the same `mediaId`, then upserts one point per shot keyed by deterministic `shotId`.
 - Extracts video audio when present, transcribes with Faster Whisper, maps transcript segments to overlapping shots, embeds shot transcript text with SentenceTransformers, and writes `shots_transcript`.
 - Extracts per-shot audio clips when audio is present, embeds them with MS-CLAP, and writes `shots_audio`.

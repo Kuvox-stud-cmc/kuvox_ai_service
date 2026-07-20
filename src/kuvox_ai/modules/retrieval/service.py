@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any, Literal, TypeVar
 
 from qdrant_client import models
 
 from kuvox_ai.infrastructure import KuzuClient, QdrantClient
 from kuvox_ai.logging import get_logger
+from kuvox_ai.metrics import RETRIEVAL_STAGE_CALLS, RETRIEVAL_STAGE_LATENCY
 from kuvox_ai.modules.ingestion.text_encoder import (
     SentenceTransformerTextEncoder,
     TextEmbeddingEncoder,
@@ -48,6 +50,12 @@ class _ShotAccumulator:
     evidence: list[RetrievalEvidenceSnippet] = field(default_factory=list)
     previous_shot_id: str | None = None
     next_shot_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AuthoritativeVideoEditorRetrieval:
+    result: VideoEditorRetrievalResult
+    complete: bool
 
 
 class RetrievalService:
@@ -99,6 +107,13 @@ class RetrievalService:
         query: VideoEditorRetrievalQuery,
     ) -> VideoEditorRetrievalResult:
         """Search transcript/OCR shot indexes for trusted editor media ids."""
+        return (await self.retrieve_video_editor_authoritative(query)).result
+
+    async def retrieve_video_editor_authoritative(
+        self,
+        query: VideoEditorRetrievalQuery,
+    ) -> AuthoritativeVideoEditorRetrieval:
+        """Return the DTO together with whether the full requested pipeline completed."""
         warnings: list[str] = []
         normalized_media_ids = _dedupe_non_empty(query.media_ids)
         normalized_modalities = _dedupe_non_empty(query.modalities)
@@ -115,42 +130,65 @@ class RetrievalService:
 
         if not normalized_media_ids:
             warnings.append("No ready project video media is available for semantic retrieval.")
-            return VideoEditorRetrievalResult(
-                project_id=query.project_id,
-                query=query.query,
-                warnings=warnings,
+            return AuthoritativeVideoEditorRetrieval(
+                VideoEditorRetrievalResult(
+                    project_id=query.project_id,
+                    query=query.query,
+                    warnings=warnings,
+                ),
+                False,
             )
 
         if not query.query.strip():
-            return VideoEditorRetrievalResult(
-                project_id=query.project_id,
-                query=query.query,
-                warnings=warnings,
+            return AuthoritativeVideoEditorRetrieval(
+                VideoEditorRetrievalResult(
+                    project_id=query.project_id,
+                    query=query.query,
+                    warnings=warnings,
+                ),
+                False,
             )
 
         if not searchable_modalities:
             warnings.append("No V-012 searchable modalities were requested.")
-            return VideoEditorRetrievalResult(
-                project_id=query.project_id,
-                query=query.query,
-                warnings=warnings,
+            return AuthoritativeVideoEditorRetrieval(
+                VideoEditorRetrievalResult(
+                    project_id=query.project_id,
+                    query=query.query,
+                    warnings=warnings,
+                ),
+                False,
             )
 
-        vectors = await self._text_encoder.encode_texts([query.query])
+        encode_started = perf_counter()
+        try:
+            vectors = await self._text_encoder.encode_texts([query.query])
+            RETRIEVAL_STAGE_CALLS.labels("query_encoding", "success").inc()
+        except Exception:
+            RETRIEVAL_STAGE_CALLS.labels("query_encoding", "error").inc()
+            raise
+        finally:
+            RETRIEVAL_STAGE_LATENCY.labels("query_encoding").observe(
+                perf_counter() - encode_started
+            )
         if not vectors:
-            return VideoEditorRetrievalResult(
-                project_id=query.project_id,
-                query=query.query,
-                warnings=[*warnings, "The retrieval query could not be embedded."],
+            return AuthoritativeVideoEditorRetrieval(
+                VideoEditorRetrievalResult(
+                    project_id=query.project_id,
+                    query=query.query,
+                    warnings=[*warnings, "The retrieval query could not be embedded."],
+                ),
+                False,
             )
         vector = vectors[0]
 
         accumulators: dict[str, _ShotAccumulator] = {}
         candidates_considered = 0
+        complete = not warnings
 
         for modality in searchable_modalities:
             collection_name = self._collections[modality]
-            hits = await self._search_collection(
+            hits, modality_complete = await self._search_collection(
                 collection_name=collection_name,
                 modality=modality,
                 vector=vector,
@@ -158,12 +196,13 @@ class RetrievalService:
                 limit=query.top_k,
                 warnings=warnings,
             )
+            complete = complete and modality_complete
             candidates_considered += len(hits)
             for rank, hit in enumerate(hits, start=1):
                 _merge_hit(accumulators, modality=modality, hit=hit, rank=rank)
 
         if query.expand_graph and accumulators:
-            await self._attach_graph_context(accumulators, warnings)
+            complete = await self._attach_graph_context(accumulators, warnings) and complete
 
         results = [
             VideoEditorShotResult(
@@ -183,12 +222,16 @@ class RetrievalService:
             )[: query.top_k]
         ]
 
-        return VideoEditorRetrievalResult(
+        result = VideoEditorRetrievalResult(
             project_id=query.project_id,
             query=query.query,
             results=results,
             warnings=_dedupe_non_empty(warnings),
             total_candidates_considered=candidates_considered,
+        )
+        return AuthoritativeVideoEditorRetrieval(
+            result,
+            complete and bool(results) and not result.warnings,
         )
 
     async def _search_collection(
@@ -200,12 +243,13 @@ class RetrievalService:
         media_ids: list[str],
         limit: int,
         warnings: list[str],
-    ) -> list[Any]:
+    ) -> tuple[list[Any], bool]:
         try:
+            started = perf_counter()
             client = self._qdrant.client
             if not await client.collection_exists(collection_name):
                 warnings.append(f"Qdrant collection {collection_name} is not available.")
-                return []
+                return [], False
 
             search_filter = models.Filter(
                 must=[
@@ -223,9 +267,11 @@ class RetrievalService:
                     limit=limit,
                     with_payload=True,
                 )
-                return list(getattr(response, "points", response) or [])
+                hits = list(getattr(response, "points", response) or [])
+                RETRIEVAL_STAGE_CALLS.labels("qdrant_search", "success").inc()
+                return hits, True
 
-            return list(
+            hits = list(
                 await client.search(
                     collection_name=collection_name,
                     query_vector=vector,
@@ -234,40 +280,59 @@ class RetrievalService:
                     with_payload=True,
                 )
             )
+            RETRIEVAL_STAGE_CALLS.labels("qdrant_search", "success").inc()
+            return hits, True
         except Exception as exc:  # noqa: BLE001
+            RETRIEVAL_STAGE_CALLS.labels("qdrant_search", "error").inc()
             logger.warning(
                 "retrieval.video_editor.collection_failed",
                 collection=collection_name,
                 modality=modality,
-                error=str(exc),
+                error_type=type(exc).__name__,
             )
             warnings.append(f"Retrieval collection {collection_name} is unavailable.")
-            return []
+            return [], False
+        finally:
+            if "started" in locals():
+                RETRIEVAL_STAGE_LATENCY.labels("qdrant_search").observe(perf_counter() - started)
 
     async def _attach_graph_context(
         self,
         accumulators: dict[str, _ShotAccumulator],
         warnings: list[str],
-    ) -> None:
+    ) -> bool:
         try:
             for shot in accumulators.values():
                 context = await self._graph_neighbors(shot.shot_id)
                 shot.previous_shot_id = context.get("previousShotId")
                 shot.next_shot_id = context.get("nextShotId")
+            return True
         except Exception as exc:  # noqa: BLE001
-            logger.warning("retrieval.video_editor.graph_failed", error=str(exc))
+            logger.warning(
+                "retrieval.video_editor.graph_failed",
+                error_type=type(exc).__name__,
+            )
             warnings.append("Kuzu graph expansion is unavailable.")
+            return False
 
     async def _graph_neighbors(self, shot_id: str) -> dict[str, str | None]:
-        result = await self._kuzu.execute(
-            """
-            MATCH (s:Shot {shot_id: $shot_id})
-            OPTIONAL MATCH (prev:Shot)-[:NEXT]->(s)
-            OPTIONAL MATCH (s)-[:NEXT]->(next:Shot)
-            RETURN prev.shot_id AS previousShotId, next.shot_id AS nextShotId
-            """,
-            {"shot_id": shot_id},
-        )
+        started = perf_counter()
+        try:
+            result = await self._kuzu.execute(
+                """
+                MATCH (s:Shot {shot_id: $shot_id})
+                OPTIONAL MATCH (prev:Shot)-[:NEXT]->(s)
+                OPTIONAL MATCH (s)-[:NEXT]->(next:Shot)
+                RETURN prev.shot_id AS previousShotId, next.shot_id AS nextShotId
+                """,
+                {"shot_id": shot_id},
+            )
+            RETRIEVAL_STAGE_CALLS.labels("kuzu_neighbors", "success").inc()
+        except Exception:
+            RETRIEVAL_STAGE_CALLS.labels("kuzu_neighbors", "error").inc()
+            raise
+        finally:
+            RETRIEVAL_STAGE_LATENCY.labels("kuzu_neighbors").observe(perf_counter() - started)
         row = _first_kuzu_row(result)
         return {
             "previousShotId": _string_or_none(_row_value(row, "previousShotId", 0)),

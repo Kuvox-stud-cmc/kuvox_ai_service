@@ -31,15 +31,15 @@ test: ## Run the pytest suite.
 	$(PY) -m pytest
 
 lint: ## Lint with ruff.
-	$(PY) -m ruff check src tests
-	$(PY) -m ruff format --check src tests
+	$(PY) -m ruff check src tests scripts
+	$(PY) -m ruff format --check src tests scripts
 
 typecheck: ## Static-type check with mypy.
 	$(PY) -m mypy
 
 format: ## Auto-format with ruff.
-	$(PY) -m ruff format src tests
-	$(PY) -m ruff check --fix src tests
+	$(PY) -m ruff format src tests scripts
+	$(PY) -m ruff check --fix src tests scripts
 
 worker-media-optimization: ## Run the media optimization worker.
 	$(PY) -m kuvox_ai.workers.media_optimization_worker

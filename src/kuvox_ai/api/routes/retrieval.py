@@ -42,7 +42,6 @@ async def retrieve_video_editor(
     """Run trusted, evidence-backed retrieval for the video editor."""
     logger.info(
         "retrieval.video_editor.route.start",
-        project_id=body.project_id,
         media_count=len(body.media_ids),
         top_k=body.top_k,
         modalities=body.modalities,
@@ -55,13 +54,13 @@ async def retrieve_video_editor(
         modalities=body.modalities,
         top_k=body.top_k,
         expand_graph=body.expand_graph,
+        scope_revision=body.scope_revision,
     )
     try:
         result = await state.retrieval.retrieve_video_editor(query)
     except Exception:
         logger.exception(
             "retrieval.video_editor.route.failure",
-            project_id=body.project_id,
             media_count=len(body.media_ids),
             top_k=body.top_k,
             modalities=body.modalities,
@@ -70,7 +69,6 @@ async def retrieve_video_editor(
 
     logger.info(
         "retrieval.video_editor.route.success",
-        project_id=result.project_id,
         result_count=len(result.results),
         warning_count=len(result.warnings),
         total_candidates_considered=result.total_candidates_considered,

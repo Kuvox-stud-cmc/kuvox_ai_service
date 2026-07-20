@@ -1,0 +1,56 @@
+{
+  "capturedAtUtc": "2026-07-19T02:52:25.407969Z",
+  "leaderFailure": {
+    "authoritativeCalls": 2,
+    "failedCallers": 1,
+    "successfulCallers": 15,
+    "successfulResponseSha256": "240d8c7b042b8a291e260a0ebbf17f3a8df9102ea86cd106b61e8564dc3e9c08"
+  },
+  "lockExpiry": {
+    "authoritativeCalls": 3,
+    "identical": true,
+    "responseSha256": "240d8c7b042b8a291e260a0ebbf17f3a8df9102ea86cd106b61e8564dc3e9c08"
+  },
+  "model": {
+    "dimension": 384,
+    "id": "sentence-transformers/all-MiniLM-L6-v2",
+    "real": true
+  },
+  "redis": {
+    "kind": "real",
+    "url": "redis://localhost:6379/15"
+  },
+  "redisUnavailable": {
+    "authoritativeCalls": 16,
+    "identical": true,
+    "responseSha256": "48efc1b1790b0a71e6fee10661129a127ca399f429ca89d1f622920201184637"
+  },
+  "request": {
+    "concurrency": 16,
+    "querySha256": "cc39618d0ea9f9d5f97398152136b61adfa075ee083ef4197b0c7a404905993c"
+  },
+  "schemaVersion": 1,
+  "singleFlightDisabled": {
+    "authoritativeCalls": 16,
+    "identical": true,
+    "responseSha256": "48efc1b1790b0a71e6fee10661129a127ca399f429ca89d1f622920201184637"
+  },
+  "singleFlightEnabled": {
+    "authoritativeCalls": 1,
+    "identical": true,
+    "responseSha256": "48efc1b1790b0a71e6fee10661129a127ca399f429ca89d1f622920201184637"
+  },
+  "twoServiceInstances": {
+    "authoritativeCalls": 1,
+    "identical": true,
+    "responseSha256": "48efc1b1790b0a71e6fee10661129a127ca399f429ca89d1f622920201184637"
+  },
+  "warmCache": {
+    "authoritativeCalls": 0,
+    "identical": true,
+    "redisCommandDelta": {
+      "mget": 16.0
+    },
+    "responseSha256": "48efc1b1790b0a71e6fee10661129a127ca399f429ca89d1f622920201184637"
+  }
+}

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from fastapi import Request
 
+from kuvox_ai.cache import CacheStore
 from kuvox_ai.infrastructure import (
     KuzuClient,
     LLMClient,
@@ -22,7 +23,7 @@ from kuvox_ai.modules.ingestion import IngestionService
 from kuvox_ai.modules.media_optimization import MediaOptimizationService
 from kuvox_ai.modules.planning import PlanningService
 from kuvox_ai.modules.rendering import RenderingService
-from kuvox_ai.modules.retrieval import RetrievalService
+from kuvox_ai.modules.retrieval import CachedVideoEditorRetrievalService
 from kuvox_ai.modules.sandbox import SandboxService
 
 
@@ -36,10 +37,11 @@ class AppState:
     rabbitmq: RabbitMQClient
     storage: ObjectStorageClient
     llm: LLMClient
+    cache: CacheStore
 
     ingestion: IngestionService
     media_optimization: MediaOptimizationService
-    retrieval: RetrievalService
+    retrieval: CachedVideoEditorRetrievalService
     planning: PlanningService
     rendering: RenderingService
     sandbox: SandboxService

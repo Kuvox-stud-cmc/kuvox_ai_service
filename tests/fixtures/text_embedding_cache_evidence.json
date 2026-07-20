@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+  "dimension": 384,
+  "query": "speaker explains the launch timeline on stage",
+  "legacyText": "an archived query describing the café launch",
+  "ingestionTexts": {
+    "shotTranscripts": [
+      "speaker explains the launch timeline on stage",
+      "the editor reviews the opening sequence"
+    ],
+    "shotOcr": [
+      "LAUNCH PLAN\r\nDAY 1",
+      "Café preview"
+    ],
+    "mediaTranscripts": [
+      "the editor reviews the opening sequence"
+    ],
+    "mediaOcr": [
+      "Cafe\u0301 preview"
+    ]
+  }
+}

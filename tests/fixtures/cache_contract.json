@@ -1,0 +1,8 @@
+{
+  "prefix": "kuvox:v1",
+  "parts": ["ai", "example", "scope", "123"],
+  "key": "kuvox:v1:ai:example:scope:123",
+  "canonical_sensitive_input": "Kuvox canonical input\n",
+  "sha256": "5d2a280137b673ed8d7e307acbc2460e4278266562cc0f4694e621198ffd58da",
+  "envelope_fields": ["schema_version", "created_at_utc", "payload"]
+}

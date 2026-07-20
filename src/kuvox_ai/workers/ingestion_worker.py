@@ -5,19 +5,27 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import signal
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import aio_pika
 from pydantic import ValidationError
 
+from kuvox_ai.cache import CacheStore, build_cache_store
 from kuvox_ai.config import Settings, get_settings
 from kuvox_ai.infrastructure.kuzu_client import KuzuClient
 from kuvox_ai.infrastructure.object_storage_client import ObjectStorageClient
 from kuvox_ai.infrastructure.qdrant_client import QdrantClient
 from kuvox_ai.infrastructure.rabbitmq_client import RabbitMQClient, retry_attempt
+from kuvox_ai.infrastructure.redis_client import RedisClient
 from kuvox_ai.logging import configure_logging, get_logger
 from kuvox_ai.modules.ingestion import IngestionFailed, IngestionRequested, IngestionService
+from kuvox_ai.modules.ingestion.audio_embedding_cache import build_audio_embedding_encoder
+from kuvox_ai.modules.ingestion.text_embedding_cache import (
+    build_ingestion_text_embedding_encoder,
+)
+from kuvox_ai.modules.ingestion.visual_embedding_cache import build_visual_embedding_encoder
 
 logger = get_logger(__name__)
 
@@ -104,6 +112,7 @@ def build_service(
     storage: ObjectStorageClient,
     kuzu: KuzuClient,
     qdrant: QdrantClient,
+    cache: CacheStore,
 ) -> IngestionService:
     return IngestionService(
         storage=storage,
@@ -119,6 +128,9 @@ def build_service(
         media_audio_collection_name=settings.media_audio_collection_name,
         media_transcript_collection_name=settings.media_transcript_collection_name,
         media_ocr_collection_name=settings.media_ocr_collection_name,
+        text_encoder=build_ingestion_text_embedding_encoder(settings, cache),
+        visual_encoder=build_visual_embedding_encoder(settings, cache),
+        audio_encoder=build_audio_embedding_encoder(settings, cache),
         text_embedding_model_name=settings.text_embedding_model_name,
         text_embedding_dim=settings.text_embedding_dim,
         text_embedding_device=settings.text_embedding_device,
@@ -153,10 +165,13 @@ async def run_async() -> None:
     storage = ObjectStorageClient.from_settings(settings)
     kuzu = KuzuClient.from_settings(settings)
     qdrant = QdrantClient.from_settings(settings)
+    redis = RedisClient.from_settings(settings)
     rabbitmq = RabbitMQClient.from_settings(settings)
+    cache = build_cache_store(settings, redis)
     await storage.connect()
     await kuzu.connect()
     await qdrant.connect()
+    await redis.connect()
     await rabbitmq.connect()
     await rabbitmq.declare_retry_topology(
         settings.ingestion_requested_queue,
@@ -164,7 +179,7 @@ async def run_async() -> None:
         settings.rabbitmq_retry_delay_list,
     )
 
-    service = build_service(settings, storage, kuzu, qdrant)
+    service = build_service(settings, storage, kuzu, qdrant, cache)
 
     async def handle_message(message: aio_pika.abc.AbstractIncomingMessage) -> None:
         async with message.process(requeue=True):
@@ -198,11 +213,26 @@ async def run_async() -> None:
         await stop.wait()
     finally:
         logger.info("ingestion_worker.stopping")
-        await rabbitmq.close()
-        await qdrant.close()
-        await kuzu.close()
-        await storage.close()
+        await _close_resources(
+            rabbitmq.close,
+            redis.close,
+            qdrant.close,
+            kuzu.close,
+            storage.close,
+        )
         logger.info("ingestion_worker.stopped")
+
+
+async def _close_resources(*closers: Callable[[], Awaitable[None]]) -> None:
+    for closer in closers:
+        try:
+            await closer()
+        except Exception as exc:  # noqa: BLE001 - shutdown remains best-effort
+            logger.warning(
+                "ingestion_worker.close_failed",
+                closer=getattr(closer, "__qualname__", type(closer).__name__),
+                error=str(exc),
+            )
 
 
 def run() -> None:

@@ -162,7 +162,7 @@ jobs:
           host: ${{ vars.DROPLET_HOST }}
           username: ${{ vars.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
-          source: docker-compose.prod.yml,infra/seaweedfs/s3.json
+          source: docker-compose.prod.yml,infra/seaweedfs/s3.json,deploy/redis/redis.conf,deploy/redis/entrypoint-single.sh
           target: /opt/kuvox
 
       - name: Deploy to Droplet
@@ -177,6 +177,7 @@ jobs:
             export AI_TAG="${{ steps.tag.outputs.tag }}"
             export KUVOX_ENVIRONMENT="${{ steps.tag.outputs.env }}"
             docker compose -f docker-compose.prod.yml config >/dev/null
+            docker compose -f docker-compose.prod.yml up -d redis-api redis-ai
             docker compose -f docker-compose.prod.yml pull kuvox-ai
             docker compose -f docker-compose.prod.yml up -d kuvox-ai
             docker image prune -f

@@ -22,4 +22,8 @@ def test_health_endpoint_reports_all_healthy() -> None:
     names = {dep["name"] for dep in body["dependencies"]}
     assert names == {"kuzu", "qdrant", "redis", "rabbitmq", "object_storage", "llm"}
     for dep in body["dependencies"]:
-        assert dep["status"] == "healthy", dep
+        if dep["name"] == "redis":
+            assert dep == {"name": "redis", "status": "disabled", "required": False}
+        else:
+            assert dep["status"] == "healthy", dep
+            assert dep["required"] is True

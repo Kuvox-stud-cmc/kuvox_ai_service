@@ -1,0 +1,94 @@
+{
+  "capturedAtUtc": "2026-07-19T00:57:54.912223Z",
+  "crossConsumerReuse": {
+    "ingestionWarmInputsSaved": 3,
+    "sharedQueryTextPresentInIngestion": true
+  },
+  "dimension": 384,
+  "disabled": {
+    "encoderInputs": 2,
+    "equivalent": true,
+    "firstDurationMs": 9443.25,
+    "repeatDurationMs": 5.311,
+    "vectorSha256": "48efc1b1790b0a71e6fee10661129a127ca399f429ca89d1f622920201184637"
+  },
+  "fixtureSha256": "7724cae4d50d6056b1ebab2d89809f520bdd2816712fc84640453bfdc8baf45a",
+  "ingestion": {
+    "inputCount": 6,
+    "repeatDurationMs": 1.373,
+    "repeatEncoderInputs": 0,
+    "repeatEquivalent": true,
+    "repeatMetricDelta": {
+      "kuvox_ingestion_text_embedding_cache_operations_total{outcome=\"hit\"}": 6.0
+    },
+    "repeatRedisCommandDelta": {
+      "mget:success": 1.0
+    },
+    "vectorSha256": "df4ec2c5f4d1118f655e936fc058d31e292f051fef238a72fc63a9c3fc21017d",
+    "warmDurationMs": 13.8,
+    "warmEncoderInputs": 3,
+    "warmMetricDelta": {
+      "kuvox_ingestion_text_embedding_cache_operations_total{outcome=\"hit\"}": 1.0,
+      "kuvox_ingestion_text_embedding_cache_operations_total{outcome=\"miss\"}": 5.0,
+      "kuvox_ingestion_text_embedding_cache_operations_total{outcome=\"write\"}": 3.0,
+      "kuvox_ingestion_text_embedding_encoder_inputs_total{outcome=\"miss\"}": 3.0
+    },
+    "warmRedisCommandDelta": {
+      "mget:success": 2.0,
+      "pipeline_set:success": 1.0
+    }
+  },
+  "legacyPromotion": {
+    "encoderInputs": 0,
+    "equivalent": true,
+    "sharedValueMagic": "KTEV"
+  },
+  "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+  "query": {
+    "repeatDurationMs": 1.384,
+    "repeatEncoderInputs": 0,
+    "repeatEquivalent": true,
+    "repeatMetricDelta": {
+      "kuvox_query_embedding_cache_operations_total{outcome=\"hit\"}": 1.0
+    },
+    "repeatRedisCommandDelta": {
+      "mget:success": 1.0
+    },
+    "vectorSha256": "48efc1b1790b0a71e6fee10661129a127ca399f429ca89d1f622920201184637",
+    "warmDurationMs": 9.387,
+    "warmEncoderInputs": 1,
+    "warmEquivalentToDisabled": true,
+    "warmMetricDelta": {
+      "kuvox_query_embedding_cache_operations_total{outcome=\"miss\"}": 1.0,
+      "kuvox_query_embedding_cache_operations_total{outcome=\"write\"}": 1.0,
+      "kuvox_query_embedding_encoder_inputs_total{outcome=\"miss\"}": 1.0
+    },
+    "warmRedisCommandDelta": {
+      "mget:success": 2.0,
+      "pipeline_set:success": 1.0
+    }
+  },
+  "redis": {
+    "keyCardinality": 7,
+    "memoryBytes": 14392,
+    "payloadBytes": {
+      "maximum": 1609,
+      "minimum": 1609,
+      "total": 11263
+    }
+  },
+  "redisOutage": {
+    "durationMs": 4.182,
+    "encoderInputs": 1,
+    "equivalentToDisabled": true
+  },
+  "redisUrl": "redis://localhost:6380/15",
+  "retrievalDto": {
+    "equivalent": true,
+    "repeatEncoderInputs": 0,
+    "responseSha256": "a584846f282f563f8eb3621fed33a7a3bcc28b225087fc904dd09ad4afb5520c",
+    "warmEncoderInputs": 1
+  },
+  "runId": "36ae44bee1c748489714e90ddb18ee3e",
+  "schemaVersion": 1
+}

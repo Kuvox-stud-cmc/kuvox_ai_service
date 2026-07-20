@@ -10,6 +10,10 @@ from typing import Protocol
 from kuvox_ai.modules.ingestion.models import DetectedShot
 from kuvox_ai.modules.media_optimization.ffmpeg import resolve_ffmpeg_exe
 
+FRAME_SAMPLE_TIMESTAMP_PRECISION = 6
+FRAME_SAMPLE_JPEG_QUALITY = 2
+FRAME_SAMPLING_CONTRACT_ID = "ffmpeg-input-seek-midpoint-v1;timestamp=6dp;frames=1;jpeg-quality=2"
+
 
 @dataclass(frozen=True, slots=True)
 class SampledFrame:
@@ -62,13 +66,13 @@ async def extract_frame(video_path: Path, timestamp_seconds: float, output_path:
         "error",
         "-y",
         "-ss",
-        f"{timestamp_seconds:.6f}",
+        f"{timestamp_seconds:.{FRAME_SAMPLE_TIMESTAMP_PRECISION}f}",
         "-i",
         str(video_path),
         "-frames:v",
         "1",
         "-q:v",
-        "2",
+        str(FRAME_SAMPLE_JPEG_QUALITY),
         str(output_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
