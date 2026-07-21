@@ -66,6 +66,7 @@ jobs:
           SEAWEEDFS_PROXY_BUCKET: ${{ vars.SEAWEEDFS_PROXY_BUCKET }}
           SEAWEEDFS_THUMBNAILS_BUCKET: ${{ vars.SEAWEEDFS_THUMBNAILS_BUCKET }}
           SEAWEEDFS_TEMP_BUCKET: ${{ vars.SEAWEEDFS_TEMP_BUCKET }}
+          SEAWEEDFS_RENDER_BUCKET: ${{ vars.SEAWEEDFS_RENDER_BUCKET }}
           SEAWEEDFS_API_ACCESS_KEY: ${{ vars.SEAWEEDFS_API_ACCESS_KEY }}
           SEAWEEDFS_API_SECRET_KEY: ${{ secrets.SEAWEEDFS_API_SECRET_KEY }}
           SEAWEEDFS_AI_ACCESS_KEY: ${{ vars.SEAWEEDFS_AI_ACCESS_KEY }}
@@ -93,6 +94,7 @@ jobs:
           proxy_bucket = optional("SEAWEEDFS_PROXY_BUCKET", "kuvox-proxy")
           thumbnails_bucket = optional("SEAWEEDFS_THUMBNAILS_BUCKET", "kuvox-thumbnails")
           temp_bucket = optional("SEAWEEDFS_TEMP_BUCKET", "kuvox-temp")
+          render_bucket = optional("SEAWEEDFS_RENDER_BUCKET", "kuvox-renders")
 
           def list_read_write(bucket: str) -> list[str]:
               return [
@@ -121,6 +123,7 @@ jobs:
                           + list_read_write(canonical_bucket)
                           + list_read_write(proxy_bucket)
                           + list_read_write(thumbnails_bucket)
+                          + list_read(render_bucket)
                       ),
                   },
                   {
@@ -137,6 +140,7 @@ jobs:
                           + list_read_write(proxy_bucket)
                           + list_read_write(thumbnails_bucket)
                           + list_read_write(temp_bucket)
+                          + list_read_write(render_bucket)
                       ),
                   },
                   {
@@ -178,6 +182,7 @@ jobs:
             export KUVOX_ENVIRONMENT="${{ steps.tag.outputs.env }}"
             docker compose -f docker-compose.prod.yml config >/dev/null
             docker compose -f docker-compose.prod.yml up -d redis-api redis-ai
+            docker compose -f docker-compose.prod.yml up -d --force-recreate seaweedfs-s3
             docker compose -f docker-compose.prod.yml pull kuvox-ai
             docker compose -f docker-compose.prod.yml up -d kuvox-ai
             docker image prune -f

@@ -8,7 +8,7 @@ services:
     image: ghcr.io/${GITHUB_OWNER}/kuvox-frontend:${FRONTEND_TAG:-latest}
     restart: unless-stopped
     ports:
-      # Bound to localhost only — the host Nginx reverse proxy fronts it with TLS.
+      # Bound to localhost only - the host Nginx reverse proxy fronts it with TLS.
       - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     env_file: .env
     environment:
@@ -27,6 +27,10 @@ services:
       KUVOX_BFF_COALESCING_MAX_IN_FLIGHT: "${KUVOX_BFF_COALESCING_MAX_IN_FLIGHT:-256}"
       KUVOX_BFF_COALESCING_DEADLINE_MS: "${KUVOX_BFF_COALESCING_DEADLINE_MS:-5000}"
       KUVOX_BFF_METRICS_ENABLED: "${KUVOX_BFF_METRICS_ENABLED:-false}"
+      CACANODE_API_URL: "${CACANODE_API_URL:-}"
+      WIDGET_SCRIPT_SRC: "${WIDGET_SCRIPT_SRC:-}"
+      WIDGET_TOKEN: "${WIDGET_TOKEN:-}"
+      CACANODE_API_TOKEN: "${CACANODE_API_TOKEN:-}"
     depends_on:
       - kuvox-api
       - kuvox-ai
@@ -37,7 +41,7 @@ services:
     image: ghcr.io/${GITHUB_OWNER}/kuvox-api:${API_TAG:-latest}
     restart: unless-stopped
     ports:
-      # Bound to localhost only — the host Nginx reverse proxy fronts it with TLS.
+      # Bound to localhost only - the host Nginx reverse proxy fronts it with TLS.
       - "127.0.0.1:5000:5000"
     env_file: .env
     environment:
@@ -75,6 +79,8 @@ services:
         condition: service_healthy
       redis-api:
         condition: service_healthy
+      seaweedfs-bootstrap:
+        condition: service_completed_successfully
     networks:
       - kuvox
 
@@ -141,6 +147,8 @@ services:
         condition: service_started
       seaweedfs-filer:
         condition: service_started
+      seaweedfs-bootstrap:
+        condition: service_completed_successfully
     networks:
       - kuvox
 
@@ -280,6 +288,44 @@ services:
       - ./infra/seaweedfs:/etc/seaweedfs:ro
     depends_on:
       - seaweedfs-filer
+    networks:
+      - kuvox
+
+  seaweedfs-bootstrap:
+    image: minio/mc:latest
+    restart: "no"
+    environment:
+      SEAWEEDFS_BOOTSTRAP_ACCESS_KEY: "${SEAWEEDFS_BOOTSTRAP_ACCESS_KEY:-kuvox-bootstrap}"
+      SEAWEEDFS_BOOTSTRAP_SECRET_KEY: "${SEAWEEDFS_BOOTSTRAP_SECRET_KEY:?Set SEAWEEDFS_BOOTSTRAP_SECRET_KEY in .env}"
+      SEAWEEDFS_RAW_BUCKET: "${SEAWEEDFS_RAW_BUCKET:-kuvox-raw}"
+      SEAWEEDFS_CANONICAL_BUCKET: "${SEAWEEDFS_CANONICAL_BUCKET:-kuvox-canonical}"
+      SEAWEEDFS_PROXY_BUCKET: "${SEAWEEDFS_PROXY_BUCKET:-kuvox-proxy}"
+      SEAWEEDFS_THUMBNAILS_BUCKET: "${SEAWEEDFS_THUMBNAILS_BUCKET:-kuvox-thumbnails}"
+      SEAWEEDFS_TEMP_BUCKET: "${SEAWEEDFS_TEMP_BUCKET:-kuvox-temp}"
+      SEAWEEDFS_RENDER_BUCKET: "${SEAWEEDFS_RENDER_BUCKET:-kuvox-renders}"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: |
+      attempts=0
+      until mc alias set kuvox http://seaweedfs-s3:8333 "$${SEAWEEDFS_BOOTSTRAP_ACCESS_KEY}" "$${SEAWEEDFS_BOOTSTRAP_SECRET_KEY}" >/dev/null 2>&1; do
+        attempts=$$((attempts + 1))
+        if [ "$$attempts" -ge 30 ]; then
+          echo "SeaweedFS S3 did not become ready in time." >&2
+          exit 1
+        fi
+        sleep 2
+      done
+      for bucket in \
+        "$${SEAWEEDFS_RAW_BUCKET}" \
+        "$${SEAWEEDFS_CANONICAL_BUCKET}" \
+        "$${SEAWEEDFS_PROXY_BUCKET}" \
+        "$${SEAWEEDFS_THUMBNAILS_BUCKET}" \
+        "$${SEAWEEDFS_TEMP_BUCKET}" \
+        "$${SEAWEEDFS_RENDER_BUCKET}"; do
+        mc mb --ignore-existing "kuvox/$$bucket"
+      done
+    depends_on:
+      seaweedfs-s3:
+        condition: service_started
     networks:
       - kuvox
 
