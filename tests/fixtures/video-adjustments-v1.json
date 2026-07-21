@@ -1,0 +1,176 @@
+{
+  "registryVersion": 1,
+  "cases": [
+    {
+      "id": "neutral",
+      "item": { "type": "video", "properties": {} },
+      "expected": {
+        "registryVersion": 1,
+        "preset": "Original",
+        "intensity": 100,
+        "blend": 100,
+        "adjustments": {
+          "exposure": 0,
+          "brightness": 100,
+          "contrast": 100,
+          "temperature": 0,
+          "tint": 0,
+          "saturation": 100,
+          "vibrance": 100,
+          "lift": 0,
+          "gamma": 0,
+          "gain": 0
+        },
+        "filter": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "hueRotate": 0,
+          "sepia": 0
+        }
+      }
+    },
+    {
+      "id": "cinematic-half",
+      "item": {
+        "type": "video",
+        "properties": {
+          "filters": {
+            "builtIn": { "value": "Cinematic" },
+            "intensity": { "value": 50 },
+            "blend": { "value": 80 }
+          },
+          "adjust": {
+            "exposure": { "value": 12 },
+            "brightness": { "value": 115 },
+            "contrast": { "value": 90 },
+            "temperature": { "value": 14 },
+            "tint": { "value": -8 },
+            "saturation": { "value": 130 },
+            "vibrance": { "value": 120 }
+          },
+          "color": {
+            "lift": { "value": 5 },
+            "gamma": { "value": -10 },
+            "gain": { "value": 7 }
+          }
+        }
+      },
+      "expected": {
+        "registryVersion": 1,
+        "preset": "Cinematic",
+        "intensity": 50,
+        "blend": 80,
+        "adjustments": {
+          "exposure": 10.4,
+          "brightness": 114.2,
+          "contrast": 97.2,
+          "temperature": 11.6,
+          "tint": -7.2,
+          "saturation": 132.4,
+          "vibrance": 124,
+          "lift": 3.4,
+          "gamma": -6.8,
+          "gain": 8.6
+        },
+        "filter": {
+          "brightness": 1.195958,
+          "contrast": 0.966322,
+          "saturation": 1.441602,
+          "hueRotate": -3.672,
+          "sepia": 0.027619
+        }
+      }
+    },
+    {
+      "id": "noir",
+      "item": {
+        "type": "image",
+        "properties": {
+          "filters": {
+            "filterType": { "value": "Noir" },
+            "intensity": { "value": 100 },
+            "blend": { "value": 100 }
+          }
+        }
+      },
+      "expected": {
+        "registryVersion": 1,
+        "preset": "Noir",
+        "intensity": 100,
+        "blend": 100,
+        "adjustments": {
+          "exposure": 0,
+          "brightness": 96,
+          "contrast": 132,
+          "temperature": 0,
+          "tint": 0,
+          "saturation": 0,
+          "vibrance": 0,
+          "lift": 0,
+          "gamma": 12,
+          "gain": 4
+        },
+        "filter": {
+          "brightness": 0.96,
+          "contrast": 1.375678,
+          "saturation": 0,
+          "hueRotate": 0,
+          "sepia": 0
+        }
+      }
+    },
+    {
+      "id": "warm-quarter",
+      "item": {
+        "type": "overlay",
+        "properties": {
+          "filters": {
+            "filterType": { "value": "Warm" },
+            "intensity": { "value": 50 },
+            "blend": { "value": 50 }
+          },
+          "adjust": {
+            "exposure": { "value": -20 },
+            "brightness": { "value": 80 },
+            "contrast": { "value": 140 },
+            "temperature": { "value": -10 },
+            "tint": { "value": 12 },
+            "saturation": { "value": 70 },
+            "vibrance": { "value": 150 }
+          },
+          "color": {
+            "lift": { "value": -15 },
+            "gamma": { "value": 20 },
+            "gain": { "value": -5 }
+          }
+        }
+      },
+      "expected": {
+        "registryVersion": 1,
+        "preset": "Warm",
+        "intensity": 50,
+        "blend": 50,
+        "adjustments": {
+          "exposure": -20,
+          "brightness": 80.75,
+          "contrast": 140,
+          "temperature": -3.75,
+          "tint": 12.75,
+          "saturation": 72,
+          "vibrance": 151.5,
+          "lift": -15,
+          "gamma": 20,
+          "gain": -5
+        },
+        "filter": {
+          "brightness": 0.677292,
+          "contrast": 1.465018,
+          "saturation": 0.903371,
+          "hueRotate": 3.48,
+          "sepia": 0
+        }
+      }
+    }
+  ]
+}

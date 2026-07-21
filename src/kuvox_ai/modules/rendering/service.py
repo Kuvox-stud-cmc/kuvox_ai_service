@@ -19,6 +19,13 @@ from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 from kuvox_ai.infrastructure import ObjectStorageClient
 from kuvox_ai.logging import get_logger
 from kuvox_ai.modules.media_optimization import ffmpeg
+from kuvox_ai.modules.rendering.adjustments import (
+    FILTER_PRESETS,
+    apply_visual_style,
+    property_has_keyframes,
+    property_value,
+    resolve_visual_style,
+)
 from kuvox_ai.modules.rendering.models import RenderingMediaSource, RenderJob, RenderResult
 from kuvox_ai.schemas import VideoRenderManifest
 from kuvox_ai.schemas.render_manifest import (
@@ -146,7 +153,10 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
             raise RenderManifestError("Timeline effects are not supported by this renderer.")
 
     settings = _settings_for_manifest(job)
-    document_media = document.get("media") if isinstance(document.get("media"), dict) else {}
+    raw_document_media = document.get("media")
+    document_media: dict[str, Any] = (
+        raw_document_media if isinstance(raw_document_media, dict) else {}
+    )
     raw_tracks = document.get("tracks")
     tracks: list[Any] = raw_tracks if isinstance(raw_tracks, list) else []
     media_by_id = {source.media_id: source for source in job.media_sources}
@@ -155,6 +165,18 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
     audio_items: list[dict[str, Any]] = []
     text_overlays: list[dict[str, Any]] = []
     stack_orders = _stack_orders(tracks)
+    explicit_audio_owner_groups: set[str] = set()
+    for track in tracks:
+        if not isinstance(track, dict) or track.get("hidden") is True:
+            continue
+        raw_track_items = track.get("items")
+        track_items: list[Any] = raw_track_items if isinstance(raw_track_items, list) else []
+        for item in track_items:
+            if not isinstance(item, dict) or item.get("type") != "audio":
+                continue
+            linked_group_id = item.get("linkedGroupId")
+            if isinstance(linked_group_id, str) and linked_group_id:
+                explicit_audio_owner_groups.add(linked_group_id)
 
     for track_index, track in enumerate(tracks):
         if not isinstance(track, dict) or track.get("hidden") is True:
@@ -172,6 +194,9 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
             advanced_error = _unsupported_advanced_state(item)
             if advanced_error:
                 raise RenderManifestError(advanced_error)
+            property_error = _unsupported_property_state(item)
+            if property_error:
+                raise RenderManifestError(property_error)
             duration = _positive_float(item.get("duration"), "item.duration")
             if duration <= 0:
                 continue
@@ -191,6 +216,7 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
                         "style": _text_style(item.get("style")),
                         "transform": _transform(item.get("transform")),
                         "opacity": 1,
+                        "fades": _visual_fades(item),
                         "layerOrder": _int_or(item.get("layerOrder"), track_index),
                         "stackOrder": stack_orders.get(item_id, 0),
                         **_animation_for_item(item),
@@ -243,6 +269,12 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
                         "volume": _unit_float(item.get("volume"), default=1),
                         "muted": False,
                         "fades": _audio_fades(item.get("fades")),
+                        "sourceOwner": "audio-item",
+                        **(
+                            {"linkedGroupId": item["linkedGroupId"]}
+                            if isinstance(item.get("linkedGroupId"), str)
+                            else {}
+                        ),
                         "layerOrder": track_index,
                     }
                 )
@@ -262,6 +294,8 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
                 "transform": _transform(item.get("transform")),
                 "crop": _crop(item.get("crop")),
                 "opacity": _strict_unit_float(item.get("opacity"), "item.opacity", default=1),
+                "fades": _visual_fades(item),
+                "style": resolve_visual_style(item),
                 **_animation_for_item(item),
             }
             if item_type == "video":
@@ -271,6 +305,36 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
                 if isinstance(item.get("shotId"), str):
                     visual["shotId"] = item["shotId"]
             visual_items.append(visual)
+            if (
+                item_type == "video"
+                and track.get("muted") is not True
+                and (
+                    not isinstance(item.get("linkedGroupId"), str)
+                    or item.get("linkedGroupId") not in explicit_audio_owner_groups
+                )
+            ):
+                audio_items.append(
+                    {
+                        "itemId": item_id,
+                        "trackId": track_id,
+                        "mediaId": media_id,
+                        "timelineStart": visual["timelineStart"],
+                        "duration": duration,
+                        "sourceIn": visual["sourceIn"],
+                        "sourceOut": visual["sourceOut"],
+                        "speed": visual["speed"],
+                        "volume": 1,
+                        "muted": False,
+                        "fades": _embedded_video_audio_fades(item),
+                        "sourceOwner": "embedded-video",
+                        **(
+                            {"linkedGroupId": item["linkedGroupId"]}
+                            if isinstance(item.get("linkedGroupId"), str)
+                            else {}
+                        ),
+                        "layerOrder": track_index,
+                    }
+                )
 
     duration_seconds = max(
         [0.1]
@@ -281,8 +345,9 @@ def build_manifest(job: RenderJob) -> VideoRenderManifest:
 
     manifest = VideoRenderManifest.model_validate(
         {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "projectId": str(document.get("projectId") or job.project_id),
+            "logicalCanvas": _logical_canvas(document),
             "settings": settings,
             "durationSeconds": round(duration_seconds, 3),
             "mediaSources": sorted(media_sources.values(), key=lambda item: str(item["mediaId"])),
@@ -493,7 +558,13 @@ def _compose_and_encode_video(
                     decoding_seconds += time.perf_counter() - decode_started
                     if source_image is not None:
                         layer, position = _render_visual_layer(
-                            source_image, item, item_time, width, height
+                            source_image,
+                            item,
+                            item_time,
+                            width,
+                            height,
+                            manifest.logical_canvas.width,
+                            manifest.logical_canvas.height,
                         )
                         frame.alpha_composite(layer, position)
                 else:
@@ -528,7 +599,14 @@ def _render_visual_layer(
     item_time: float,
     project_width: int,
     project_height: int,
+    logical_width: int | None = None,
+    logical_height: int | None = None,
 ) -> tuple[Image.Image, tuple[int, int]]:
+    logical_width = logical_width or project_width
+    logical_height = logical_height or project_height
+    render_scale, offset_x, offset_y = _logical_render_geometry(
+        project_width, project_height, logical_width, logical_height
+    )
     transform = _evaluated_transform(item, item_time)
     crop = _evaluated_crop(item, item_time)
     opacity = _evaluated_opacity(item, item_time)
@@ -538,10 +616,15 @@ def _render_visual_layer(
     right = round(source_width * (1 - crop["right"]))
     bottom = round(source_height * (1 - crop["bottom"]))
     cropped = source.crop((left, top, max(left + 1, right), max(top + 1, bottom)))
-    base_scale = min(project_width / cropped.width, project_height / cropped.height)
-    output_width = max(1, round(cropped.width * base_scale * abs(transform["scaleX"])))
-    output_height = max(1, round(cropped.height * base_scale * abs(transform["scaleY"])))
+    base_scale = min(logical_width / cropped.width, logical_height / cropped.height)
+    output_width = max(
+        1, round(cropped.width * base_scale * abs(transform["scaleX"]) * render_scale)
+    )
+    output_height = max(
+        1, round(cropped.height * base_scale * abs(transform["scaleY"]) * render_scale)
+    )
     layer = cropped.resize((output_width, output_height), Image.Resampling.LANCZOS)
+    layer = apply_visual_style(layer, item.style)
     if transform["scaleX"] < 0:
         layer = layer.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     if transform["scaleY"] < 0:
@@ -551,8 +634,8 @@ def _render_visual_layer(
         layer.putalpha(alpha)
     if transform["rotation"]:
         layer = layer.rotate(-transform["rotation"], resample=Image.Resampling.BICUBIC, expand=True)
-    center_x = project_width / 2 + transform["x"]
-    center_y = project_height / 2 + transform["y"]
+    center_x = offset_x + (logical_width / 2 + transform["x"]) * render_scale
+    center_y = offset_y + (logical_height / 2 + transform["y"]) * render_scale
     return layer, (round(center_x - layer.width / 2), round(center_y - layer.height / 2))
 
 
@@ -561,24 +644,32 @@ def _render_text_layer(
 ) -> tuple[Image.Image, tuple[int, int]]:
     transform = _evaluated_transform(item, item_time)
     opacity = _evaluated_opacity(item, item_time)
-    width = max(1, round(manifest.settings.width * 0.8 * transform["scaleX"]))
-    height = max(1, round(manifest.settings.height * 0.12 * transform["scaleY"]))
+    logical_width = manifest.logical_canvas.width
+    logical_height = manifest.logical_canvas.height
+    render_scale, offset_x, offset_y = _logical_render_geometry(
+        manifest.settings.width, manifest.settings.height, logical_width, logical_height
+    )
+    width = max(1, round(logical_width * 0.8 * transform["scaleX"] * render_scale))
+    height = max(1, round(logical_height * 0.12 * transform["scaleY"] * render_scale))
     layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     if item.style.background_color:
         background = Image.new(
             "RGBA", layer.size, _rgba(item.style.background_color, round(255 * 0.72))
         )
         mask = Image.new("L", layer.size, 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, width - 1, height - 1), radius=6, fill=255)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            (0, 0, width - 1, height - 1), radius=max(1, round(6 * render_scale)), fill=255
+        )
         layer.alpha_composite(Image.composite(background, Image.new("RGBA", layer.size), mask))
-    font_size = max(1, round(item.style.font_size * transform["scaleY"]))
+    font_size = max(1, round(item.style.font_size * transform["scaleY"] * render_scale))
     font = _font(font_size, item.style.font_family, item.style.font_weight, item.style.font_style)
     lines = _wrap_text(item.text, font, width)
     text = "\n".join(lines)
     draw = ImageDraw.Draw(layer)
-    spacing = 4
+    spacing = max(1, round(4 * render_scale))
+    stroke_width = round((item.style.stroke_width or 0) * transform["scaleY"] * render_scale)
     bbox = draw.multiline_textbbox(
-        (0, 0), text, font=font, spacing=spacing, stroke_width=round(item.style.stroke_width or 0)
+        (0, 0), text, font=font, spacing=spacing, stroke_width=stroke_width
     )
     rendered_width = bbox[2] - bbox[0]
     rendered_height = bbox[3] - bbox[1]
@@ -591,19 +682,27 @@ def _render_text_layer(
         else (width - rendered_width) / 2
     )
     y = (height - rendered_height) / 2 - bbox[1]
-    shadow_blur = item.style.shadow_blur if item.style.shadow_blur is not None else 10
+    shadow_transform_scale = max(0.1, (abs(transform["scaleX"]) + abs(transform["scaleY"])) / 2)
+    shadow_blur = (
+        (item.style.shadow_blur if item.style.shadow_blur is not None else 10)
+        * render_scale
+        * shadow_transform_scale
+    )
     shadow_color = item.style.shadow_color or "black"
     if shadow_blur > 0:
         shadow = Image.new("RGBA", layer.size, (0, 0, 0, 0))
         ImageDraw.Draw(shadow).multiline_text(
-            (x + (item.style.shadow_offset_x or 0), y + (item.style.shadow_offset_y or 0)),
+            (
+                x + (item.style.shadow_offset_x or 0) * transform["scaleX"] * render_scale,
+                y + (item.style.shadow_offset_y or 0) * transform["scaleY"] * render_scale,
+            ),
             text,
             font=font,
             fill=_rgba(shadow_color, round(255 * 0.55)),
             align=align,
             spacing=spacing,
         )
-        layer.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(shadow_blur)))
+        layer.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(max(0, shadow_blur))))
     draw.multiline_text(
         (x, y),
         text,
@@ -611,14 +710,14 @@ def _render_text_layer(
         fill=_rgba(item.style.color, 255),
         align=align,
         spacing=spacing,
-        stroke_width=round(item.style.stroke_width or 0),
+        stroke_width=stroke_width,
         stroke_fill=_rgba(item.style.stroke_color or item.style.color, 255),
     )
     if opacity < 1:
         layer.putalpha(layer.getchannel("A").point(lambda value: round(value * opacity)))
     origin = (
-        round(manifest.settings.width * 0.1 + transform["x"]),
-        round(manifest.settings.height * 0.5 + transform["y"]),
+        round(offset_x + (logical_width * 0.1 + transform["x"]) * render_scale),
+        round(offset_y + (logical_height * 0.5 + transform["y"]) * render_scale),
     )
     if transform["rotation"]:
         rotated = layer.rotate(
@@ -639,9 +738,21 @@ async def _render_audio_track(
 ) -> bool:
     if not manifest.audio_items:
         return False
+    audio_capability: dict[str, bool] = {}
+    renderable_items: list[Any] = []
+    for item in manifest.audio_items:
+        resolved = resolved_sources.get(item.media_id)
+        if resolved is None:
+            raise RenderManifestError(f"Media source {item.media_id} was not downloaded.")
+        if item.media_id not in audio_capability:
+            audio_capability[item.media_id] = await _source_has_audio(resolved.local_path)
+        if audio_capability[item.media_id]:
+            renderable_items.append(item)
+    if not renderable_items:
+        return False
     args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
     input_indices: dict[str, int] = {}
-    for item in manifest.audio_items:
+    for item in renderable_items:
         if item.media_id in input_indices:
             continue
         resolved = resolved_sources.get(item.media_id)
@@ -652,7 +763,7 @@ async def _render_audio_track(
     filters: list[str] = []
     labels: list[str] = []
     duration = max(0.1, manifest.duration_seconds)
-    for index, item in enumerate(manifest.audio_items):
+    for index, item in enumerate(renderable_items):
         label = f"a{index}"
         item_duration = min(
             item.duration, max(0.001, (item.source_out - item.source_in) / item.speed)
@@ -691,8 +802,33 @@ async def _render_audio_track(
     return True
 
 
+async def _source_has_audio(path: Path) -> bool:
+    try:
+        probe = await ffmpeg.ffprobe_json(path)
+    except ffmpeg.FfmpegError:
+        return True
+    streams = probe.get("streams")
+    return isinstance(streams, list) and any(
+        isinstance(stream, dict) and stream.get("codec_type") == "audio" for stream in streams
+    )
+
+
 def _active_at(timeline_start: float, duration: float, timeline_time: float) -> bool:
     return timeline_start <= timeline_time < timeline_start + duration
+
+
+def _logical_render_geometry(
+    output_width: int,
+    output_height: int,
+    logical_width: int,
+    logical_height: int,
+) -> tuple[float, float, float]:
+    scale = min(output_width / logical_width, output_height / logical_height)
+    return (
+        scale,
+        (output_width - logical_width * scale) / 2,
+        (output_height - logical_height * scale) / 2,
+    )
 
 
 def _validate_manifest_animation_frames(manifest: VideoRenderManifest) -> None:
@@ -810,7 +946,17 @@ def _evaluated_crop(item: Any, item_time: float) -> dict[str, float]:
 
 def _evaluated_opacity(item: Any, item_time: float) -> float:
     track = item.animation.opacity if item.animation else None
-    return evaluate_animation_track(track, item_time, item.opacity)
+    base_opacity = evaluate_animation_track(track, item_time, item.opacity)
+    fade_in = min(float(item.fades.fade_in_duration), float(item.duration))
+    fade_out = min(float(item.fades.fade_out_duration), float(item.duration))
+    fade_in_gain = min(1.0, item_time / fade_in) if fade_in > 0 else 1.0
+    fade_out_start = float(item.duration) - fade_out
+    fade_out_gain = (
+        max(0.0, (float(item.duration) - item_time) / max(fade_out, 0.001))
+        if fade_out > 0 and item_time > fade_out_start
+        else 1.0
+    )
+    return max(0.0, min(1.0, base_opacity * fade_in_gain * fade_out_gain))
 
 
 def _wrap_text(text: str, font: ImageFont.ImageFont, width: int) -> list[str]:
@@ -821,16 +967,45 @@ def _wrap_text(text: str, font: ImageFont.ImageFont, width: int) -> list[str]:
         if not words:
             lines.append("")
             continue
-        current = words[0]
-        for word in words[1:]:
+        current = ""
+        for word in words:
+            parts = _split_text_token(word, font, width, draw)
+            if len(parts) > 1:
+                if current:
+                    lines.append(current)
+                lines.extend(parts[:-1])
+                current = parts[-1]
+                continue
             candidate = f"{current} {word}"
-            if draw.textlength(candidate, font=font) <= width:
-                current = candidate
+            if not current or draw.textlength(candidate, font=font) <= width:
+                current = word if not current else candidate
             else:
                 lines.append(current)
                 current = word
         lines.append(current)
     return lines
+
+
+def _split_text_token(
+    token: str,
+    font: ImageFont.ImageFont,
+    width: int,
+    draw: ImageDraw.ImageDraw,
+) -> list[str]:
+    if draw.textlength(token, font=font) <= width:
+        return [token]
+    chunks: list[str] = []
+    current = ""
+    for character in token:
+        candidate = current + character
+        if current and draw.textlength(candidate, font=font) > width:
+            chunks.append(current)
+            current = character
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks or [token]
 
 
 def _video_codec_args(manifest: VideoRenderManifest) -> list[str]:
@@ -860,18 +1035,36 @@ def _settings_for_manifest(job: RenderJob) -> dict[str, Any]:
         document_settings = {}
     width = int(settings.get("width") or document_settings.get("width") or 1920)
     height = int(settings.get("height") or document_settings.get("height") or 1080)
+    logical_width = int(document_settings.get("width") or 1920)
+    logical_height = int(document_settings.get("height") or 1080)
+    if width <= 0 or height <= 0 or width % 2 or height % 2:
+        raise RenderManifestError("Render dimensions must be positive even pixel values.")
+    if not _dimensions_preserve_aspect(width, height, logical_width, logical_height):
+        raise RenderManifestError(
+            "Render dimensions must preserve the saved document aspect ratio."
+        )
     frame_rate = int(settings.get("frameRate") or document_settings.get("frameRate") or 30)
+    resolution = _normalize_resolution(settings.get("resolution"), width, height)
     return {
         "preset": str(
             settings.get("preset") or document_settings.get("exportPreset") or "h264-1080p"
         ),
         "format": str(settings.get("format") or "mp4"),
-        "resolution": str(settings.get("resolution") or _resolution_for(width, height)),
+        "resolution": resolution,
         "width": width,
         "height": height,
         "frameRate": frame_rate,
         "quality": str(settings.get("quality") or "standard"),
         "destinationLabel": str(settings.get("destinationLabel") or "Kuvox render"),
+    }
+
+
+def _logical_canvas(document: dict[str, Any]) -> dict[str, int]:
+    raw_settings = document.get("settings")
+    settings: dict[str, Any] = raw_settings if isinstance(raw_settings, dict) else {}
+    return {
+        "width": int(settings.get("width") or 1920),
+        "height": int(settings.get("height") or 1080),
     }
 
 
@@ -897,9 +1090,8 @@ def _font(
     weight: str | None = None,
     style: str | None = None,
 ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    bold = weight in {"semibold", "bold"}
     italic = style == "italic"
-    candidates = _font_candidates(family, bold=bold, italic=italic)
+    candidates = _font_candidates(family, weight=weight, italic=italic)
     for candidate in candidates:
         try:
             font = ImageFont.truetype(candidate, size=size)
@@ -917,17 +1109,18 @@ def _font(
     return ImageFont.load_default()
 
 
-def _font_candidates(family: str, *, bold: bool, italic: bool) -> tuple[str, ...]:
+def _font_candidates(family: str, *, weight: str | None, italic: bool) -> tuple[str, ...]:
     catalog = _font_catalog()
     requested = family.strip() or "Inter"
     entry = catalog.get(requested) or catalog["Inter"]
     if "fallback" in entry:
         entry = catalog.get(entry["fallback"], catalog["Inter"])
+    requested_weight = weight if weight in {"medium", "semibold", "bold"} else "regular"
     key = (
         "italic"
         if italic and "italic" in entry
-        else "bold"
-        if bold and "bold" in entry
+        else requested_weight
+        if requested_weight in entry
         else "regular"
     )
     primary = _font_assets_dir() / entry[key]
@@ -1040,13 +1233,14 @@ def _unsupported_advanced_state(item: dict[str, Any]) -> str | None:
     blockers = (
         ("trackingTargets", "Tracking metadata"),
         ("autoReframe", "Auto-reframe metadata"),
-        ("color", "Color processing"),
         ("freezeFrames", "Freeze frames"),
         ("timeRemap", "Time remapping"),
     )
     for key, label in blockers:
         if advanced.get(key):
             return f"{label} on {item_id} is not supported by export."
+    if _has_non_default_advanced_color(advanced.get("color")):
+        return f"Color processing on {item_id} is not supported by export."
     raw_transform = advanced.get("transform")
     transform: dict[str, Any] = raw_transform if isinstance(raw_transform, dict) else {}
     if transform.get("anchorX") or transform.get("anchorY"):
@@ -1068,6 +1262,209 @@ def _unsupported_advanced_state(item: dict[str, Any]) -> str | None:
             "or opacity keyframes."
         )
     return None
+
+
+def _has_non_default_advanced_color(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    rgb_matrix = value.get("rgbMatrix")
+    if isinstance(rgb_matrix, list) and any(
+        isinstance(entry, int | float) and float(entry) != (1 if index % 4 == 0 else 0)
+        for index, entry in enumerate(rgb_matrix)
+    ):
+        return True
+    hsl = value.get("hsl")
+    if isinstance(hsl, dict) and any(
+        isinstance(band, dict)
+        and any(
+            (_float_or(band.get(name), 0) or 0) != 0 for name in ("hue", "saturation", "lightness")
+        )
+        for band in hsl.values()
+    ):
+        return True
+    curves = value.get("curves")
+    if isinstance(curves, dict):
+        for points in curves.values():
+            if not isinstance(points, list) or len(points) != 2:
+                return True
+            first, second = points
+            if not isinstance(first, dict) or not isinstance(second, dict):
+                return True
+            if (first.get("x"), first.get("y"), second.get("x"), second.get("y")) != (
+                0,
+                0,
+                1,
+                1,
+            ):
+                return True
+    return False
+
+
+def _unsupported_property_state(item: dict[str, Any]) -> str | None:
+    item_id = str(item.get("id") or "<unknown>")
+    item_label = f"Timeline item {item_id}"
+    item_type = str(item.get("type") or "")
+    properties = item.get("properties") if isinstance(item.get("properties"), dict) else {}
+    effects = properties.get("effects") if isinstance(properties, dict) else None
+    if isinstance(effects, dict) and effects:
+        return f"{item_label} uses an item effect that is not supported by export."
+    preset_property = "builtIn" if item_type == "video" else "filterType"
+    supported_style_properties = (
+        ("adjust", "exposure"),
+        ("adjust", "brightness"),
+        ("adjust", "contrast"),
+        ("adjust", "temperature"),
+        ("adjust", "tint"),
+        ("adjust", "saturation"),
+        ("adjust", "vibrance"),
+        ("color", "lift"),
+        ("color", "gamma"),
+        ("color", "gain"),
+        ("filters", preset_property),
+        ("filters", "lutLibrary"),
+        ("filters", "intensity"),
+        ("filters", "blend"),
+    )
+    if any(property_has_keyframes(item, group, name) for group, name in supported_style_properties):
+        return f"{item_label} has animated color or filter controls, which are not supported by export."
+
+    if item_type in {"video", "image", "overlay"}:
+        for property_name in (preset_property, "lutLibrary"):
+            selected = property_value(item, "filters", property_name, "Original")
+            if isinstance(selected, str) and selected not in {"", "None", "Cool", *FILTER_PRESETS}:
+                return f"{item_label} uses unsupported filter {selected}."
+
+        unsupported_adjustments = (
+            ("highlights", 100),
+            ("shadows", 100),
+            ("whites", 0),
+            ("blacks", 0),
+            ("sharpness", 0),
+            ("clarity", 0),
+        )
+        if any(
+            _numeric_property_differs(item, "adjust", name, default)
+            or property_has_keyframes(item, "adjust", name)
+            for name, default in unsupported_adjustments
+        ):
+            return f"{item_label} uses tonal detail controls that are not supported by export."
+        if (
+            _numeric_property_differs(item, "color", "vignette", 0)
+            or _numeric_property_differs(item, "color", "grain", 0)
+            or property_has_keyframes(item, "color", "vignette")
+            or property_has_keyframes(item, "color", "grain")
+        ):
+            return f"{item_label} uses vignette or grain, which is not supported by export."
+        if _has_non_default_mask(item):
+            return f"{item_label} uses a mask, which is not supported by export."
+        if (
+            bool(property_value(item, "speedSettings", "reverse", False))
+            or _string_property_differs(item, "speedSettings", "speedCurve", "Linear")
+            or property_value(item, "speedSettings", "pitchCorrection", True) is False
+        ):
+            return (
+                f"{item_label} uses reverse, nonlinear speed, or pitch handling that is not "
+                "supported by export."
+            )
+        if _has_unsupported_entrance_exit_animation(item):
+            return (
+                f"{item_label} uses an entrance or exit animation that is not supported by export."
+            )
+
+    if item_type == "video" and _has_unsupported_video_audio_state(item):
+        return f"{item_label} uses advanced audio processing that is not supported by export."
+    if item_type == "audio" and _has_unsupported_audio_state(item):
+        return f"{item_label} uses advanced audio processing that is not supported by export."
+    if item_type == "text":
+        preset = property_value(item, "animation", "preset", "None")
+        raw_style = item.get("style")
+        style: dict[str, Any] = raw_style if isinstance(raw_style, dict) else {}
+        anim_type = style.get("animType")
+        if (isinstance(preset, str) and preset not in {"", "None"}) or (
+            isinstance(anim_type, str) and anim_type not in {"", "None"}
+        ):
+            return (
+                f"{item_label} uses an entrance or exit animation that is not supported by export."
+            )
+    return None
+
+
+def _has_non_default_mask(item: dict[str, Any]) -> bool:
+    string_defaults = (("shape", "None"), ("maskType", "None"))
+    number_defaults = (
+        ("top", 0),
+        ("bottom", 0),
+        ("left", 0),
+        ("right", 0),
+        ("cornerRadius", 0),
+        ("feather", 0),
+        ("expansion", 0),
+        ("maskFeather", 10),
+        ("maskSize", 50),
+    )
+    return (
+        any(
+            _string_property_differs(item, "mask", name, default)
+            for name, default in string_defaults
+        )
+        or any(
+            _numeric_property_differs(item, "mask", name, default)
+            for name, default in number_defaults
+        )
+        or bool(property_value(item, "mask", "invert", False))
+    )
+
+
+def _has_unsupported_entrance_exit_animation(item: dict[str, Any]) -> bool:
+    preset = property_value(item, "animation", "presets", "None")
+    return (
+        (isinstance(preset, str) and preset not in {"", "None"})
+        or _numeric_property_differs(item, "animation", "scaleAnim", 0)
+        or _numeric_property_differs(item, "animation", "rotationAnim", 0)
+    )
+
+
+def _has_unsupported_video_audio_state(item: dict[str, Any]) -> bool:
+    return (
+        _numeric_property_differs(item, "audioSettings", "balance", 0)
+        or bool(property_value(item, "audioSettings", "normalize", False))
+        or bool(property_value(item, "audioSettings", "noiseRem", False))
+        or bool(property_value(item, "audioSettings", "voiceEnhance", False))
+        or _string_property_differs(item, "audioSettings", "eq", "Flat")
+        or bool(property_value(item, "audioSettings", "compressor", False))
+        or bool(property_value(item, "audioSettings", "limiter", False))
+    )
+
+
+def _has_unsupported_audio_state(item: dict[str, Any]) -> bool:
+    return (
+        bool(property_value(item, "noiseReduction", "enabled", False))
+        or _numeric_property_differs(item, "noiseReduction", "level", 50)
+        or _string_property_differs(item, "eq", "preset", "Flat")
+        or _numeric_property_differs(item, "eq", "low", 0)
+        or _numeric_property_differs(item, "eq", "mid", 0)
+        or _numeric_property_differs(item, "eq", "high", 0)
+        or _numeric_property_differs(item, "speedSettings", "speedMultiplier", 1)
+        or property_value(item, "speedSettings", "pitchCorrection", True) is False
+    )
+
+
+def _numeric_property_differs(
+    item: dict[str, Any], group_name: str, property_name: str, fallback: float
+) -> bool:
+    value = property_value(item, group_name, property_name, fallback)
+    return (
+        isinstance(value, int | float)
+        and math.isfinite(float(value))
+        and abs(float(value) - fallback) > 1e-6
+    )
+
+
+def _string_property_differs(
+    item: dict[str, Any], group_name: str, property_name: str, fallback: str
+) -> bool:
+    value = property_value(item, group_name, property_name, fallback)
+    return isinstance(value, str) and value not in {"", fallback}
 
 
 def _animation_for_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -1134,6 +1531,29 @@ def _audio_fades(value: Any) -> dict[str, float]:
     }
 
 
+def _visual_fades(item: dict[str, Any]) -> dict[str, float]:
+    return {
+        "fadeInDuration": _property_non_negative_float(item, "animation", "fadeIn", 0),
+        "fadeOutDuration": _property_non_negative_float(item, "animation", "fadeOut", 0),
+    }
+
+
+def _embedded_video_audio_fades(item: dict[str, Any]) -> dict[str, float]:
+    return {
+        "fadeInDuration": _property_non_negative_float(item, "audioSettings", "fadeIn", 0),
+        "fadeOutDuration": _property_non_negative_float(item, "audioSettings", "fadeOut", 0),
+    }
+
+
+def _property_non_negative_float(
+    item: dict[str, Any], group_name: str, property_name: str, fallback: float
+) -> float:
+    value = property_value(item, group_name, property_name, fallback)
+    if not isinstance(value, int | float) or not math.isfinite(float(value)):
+        return fallback
+    return max(0, float(value))
+
+
 def _transform(value: Any) -> dict[str, float]:
     transform = value if isinstance(value, dict) else {}
     return {
@@ -1168,13 +1588,35 @@ def _stack_sort_key(item: dict[str, Any]) -> tuple[int, str]:
 
 
 def _resolution_for(width: int, height: int) -> str:
-    if (width, height) == (1280, 720):
-        return "1280x720"
-    if (width, height) == (1920, 1080):
-        return "1920x1080"
-    if (width, height) == (3840, 2160):
-        return "3840x2160"
+    short_edge = min(width, height)
+    if short_edge == 720:
+        return "720p"
+    if short_edge == 1080:
+        return "1080p"
+    if short_edge == 2160:
+        return "2160p"
     return "current"
+
+
+def _normalize_resolution(value: Any, width: int, height: int) -> str:
+    if value == "1280x720":
+        return "720p"
+    if value == "1920x1080":
+        return "1080p"
+    if value == "3840x2160":
+        return "2160p"
+    if value in {"720p", "1080p", "2160p", "current"}:
+        return str(value)
+    return _resolution_for(width, height)
+
+
+def _dimensions_preserve_aspect(
+    width: int, height: int, logical_width: int, logical_height: int
+) -> bool:
+    if logical_width <= 0 or logical_height <= 0:
+        return False
+    error = abs(width * logical_height - height * logical_width)
+    return error <= max(logical_width, logical_height)
 
 
 def _manifest_kind(value: str) -> str:

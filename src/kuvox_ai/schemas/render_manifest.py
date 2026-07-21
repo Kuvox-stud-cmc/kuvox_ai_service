@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -19,7 +19,15 @@ class _CamelModel(BaseModel):
 class VideoRenderSettings(_CamelModel):
     preset: Literal["h264-720p", "h264-1080p", "h264-4k", "prores-master"]
     format: Literal["mp4", "mov"]
-    resolution: Literal["1280x720", "1920x1080", "3840x2160", "current"]
+    resolution: Literal[
+        "720p",
+        "1080p",
+        "2160p",
+        "current",
+        "1280x720",
+        "1920x1080",
+        "3840x2160",
+    ]
     width: int = Field(gt=0)
     height: int = Field(gt=0)
     frame_rate: Literal[24, 25, 30, 60]
@@ -96,6 +104,43 @@ class VideoRenderAnimation(_CamelModel):
     opacity: VideoRenderAnimationTrack | None = None
 
 
+class VideoRenderFades(_CamelModel):
+    fade_in_duration: float = Field(ge=0)
+    fade_out_duration: float = Field(ge=0)
+
+
+class VideoRenderResolvedAdjustments(_CamelModel):
+    exposure: float
+    brightness: float
+    contrast: float
+    temperature: float
+    tint: float
+    saturation: float
+    vibrance: float
+    lift: float
+    gamma: float
+    gain: float
+
+
+class VideoRenderResolvedFilter(_CamelModel):
+    brightness: float = Field(ge=0)
+    contrast: float = Field(ge=0)
+    saturation: float = Field(ge=0)
+    hue_rotate: float
+    sepia: float = Field(ge=0, le=1)
+
+
+class VideoRenderVisualStyle(_CamelModel):
+    registry_version: Literal[1]
+    preset: Literal[
+        "Original", "Cinematic", "Film", "Vintage", "Warm", "Cold", "Dreamy", "Noir", "Vivid"
+    ]
+    intensity: float = Field(ge=0, le=100)
+    blend: float = Field(ge=0, le=100)
+    adjustments: VideoRenderResolvedAdjustments
+    filter: VideoRenderResolvedFilter
+
+
 class VideoRenderVisualItem(_CamelModel):
     item_id: str
     track_id: str
@@ -112,12 +157,9 @@ class VideoRenderVisualItem(_CamelModel):
     transform: VideoRenderTransform
     crop: VideoRenderCrop
     opacity: float = Field(ge=0, le=1)
+    fades: VideoRenderFades
+    style: VideoRenderVisualStyle
     animation: VideoRenderAnimation | None = None
-
-
-class VideoRenderAudioFades(_CamelModel):
-    fade_in_duration: float = Field(ge=0)
-    fade_out_duration: float = Field(ge=0)
 
 
 class VideoRenderAudioItem(_CamelModel):
@@ -131,7 +173,9 @@ class VideoRenderAudioItem(_CamelModel):
     speed: float = Field(gt=0)
     volume: float = Field(ge=0, le=1)
     muted: bool
-    fades: VideoRenderAudioFades
+    fades: VideoRenderFades
+    source_owner: Literal["embedded-video", "audio-item"]
+    linked_group_id: str | None = None
     layer_order: int
 
 
@@ -162,14 +206,21 @@ class VideoRenderTextOverlay(_CamelModel):
     style: VideoRenderTextStyle
     transform: VideoRenderTransform
     opacity: float = Field(ge=0, le=1)
+    fades: VideoRenderFades
     layer_order: int
     stack_order: int
     animation: VideoRenderAnimation | None = None
 
 
+class VideoRenderLogicalCanvas(_CamelModel):
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+
+
 class VideoRenderManifest(_CamelModel):
-    schema_version: Literal[1, 2]
+    schema_version: Literal[1, 2, 3]
     project_id: str
+    logical_canvas: VideoRenderLogicalCanvas
     settings: VideoRenderSettings
     duration_seconds: float = Field(ge=0)
     media_sources: list[VideoRenderMediaSource] = Field(default_factory=list)
@@ -179,29 +230,73 @@ class VideoRenderManifest(_CamelModel):
 
     @model_validator(mode="before")
     @classmethod
-    def upgrade_v1_stack_order(cls, value: object) -> object:
-        if (
-            not isinstance(value, dict)
-            or value.get("schemaVersion", value.get("schema_version")) != 1
-        ):
+    def upgrade_legacy_manifest(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        version = value.get("schemaVersion", value.get("schema_version"))
+        if version not in {1, 2}:
             return value
         upgraded = dict(value)
         visuals = [dict(item) for item in upgraded.get("visualItems", [])]
+        audio = [dict(item) for item in upgraded.get("audioItems", [])]
         texts = [dict(item) for item in upgraded.get("textOverlays", [])]
-        ordered = sorted(
-            [("visual", index, item) for index, item in enumerate(visuals)]
-            + [("text", index, item) for index, item in enumerate(texts)],
-            key=lambda entry: (
-                float(entry[2].get("timelineStart", 0)),
-                int(entry[2].get("layerOrder", 0)),
-                str(entry[2].get("itemId", "")),
-            ),
-        )
-        for stack_order, (kind, index, _) in enumerate(ordered):
-            target = visuals if kind == "visual" else texts
-            target[index]["stackOrder"] = stack_order
-            if kind == "visual" and "crop" not in target[index]:
-                target[index]["crop"] = {"top": 0, "right": 0, "bottom": 0, "left": 0}
+        if version == 1:
+            ordered = sorted(
+                [("visual", index, item) for index, item in enumerate(visuals)]
+                + [("text", index, item) for index, item in enumerate(texts)],
+                key=lambda entry: (
+                    float(entry[2].get("timelineStart", 0)),
+                    int(entry[2].get("layerOrder", 0)),
+                    str(entry[2].get("itemId", "")),
+                ),
+            )
+            for stack_order, (kind, index, _) in enumerate(ordered):
+                target = visuals if kind == "visual" else texts
+                target[index]["stackOrder"] = stack_order
+                if kind == "visual" and "crop" not in target[index]:
+                    target[index]["crop"] = {"top": 0, "right": 0, "bottom": 0, "left": 0}
+        raw_settings = upgraded.get("settings")
+        settings: dict[str, Any] = raw_settings if isinstance(raw_settings, dict) else {}
+        upgraded["logicalCanvas"] = {
+            "width": int(settings.get("width", 1920)),
+            "height": int(settings.get("height", 1080)),
+        }
+        for item in visuals:
+            item["fades"] = {"fadeInDuration": 0, "fadeOutDuration": 0}
+            item["style"] = _neutral_visual_style()
+        for item in audio:
+            item["sourceOwner"] = "audio-item"
+        for item in texts:
+            item["fades"] = {"fadeInDuration": 0, "fadeOutDuration": 0}
         upgraded["visualItems"] = visuals
+        upgraded["audioItems"] = audio
         upgraded["textOverlays"] = texts
         return upgraded
+
+
+def _neutral_visual_style() -> dict[str, object]:
+    return {
+        "registryVersion": 1,
+        "preset": "Original",
+        "intensity": 100,
+        "blend": 100,
+        "adjustments": {
+            "exposure": 0,
+            "brightness": 100,
+            "contrast": 100,
+            "temperature": 0,
+            "tint": 0,
+            "saturation": 100,
+            "vibrance": 100,
+            "lift": 0,
+            "gamma": 0,
+            "gain": 0,
+        },
+        "filter": {
+            "brightness": 1,
+            "contrast": 1,
+            "saturation": 1,
+            "hueRotate": 0,
+            "sepia": 0,
+        },
+    }

@@ -121,7 +121,11 @@ def test_render_manifest_round_trips_camel_case_payload() -> None:
     assert manifest.visual_items[0].shot_id == "media-video:shot:000001"
     assert manifest.visual_items[1].shot_id is None
     assert manifest.audio_items[0].fades.fade_out_duration == 1
+    assert manifest.audio_items[0].source_owner == "audio-item"
     assert manifest.text_overlays[0].style.font_family == "Inter"
+    assert manifest.logical_canvas.width == 1920
+    assert manifest.visual_items[0].style.preset == "Original"
+    assert manifest.visual_items[0].fades.fade_in_duration == 0
 
     dumped = manifest.model_dump(by_alias=True)
     assert dumped["schemaVersion"] == 1
@@ -193,6 +197,8 @@ def test_render_manifest_v2_round_trips_animation_and_required_stack_order() -> 
     assert manifest.visual_items[0].animation.transform is not None
     assert manifest.visual_items[0].animation.transform.x is not None
     assert manifest.visual_items[0].animation.transform.x.keyframes[-1].value == 100
+    assert manifest.logical_canvas.width == 320
+    assert manifest.visual_items[0].style.registry_version == 1
 
 
 def test_legacy_plan_schema_still_uses_uuid_shot_operations() -> None:
