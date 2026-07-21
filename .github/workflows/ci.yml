@@ -49,6 +49,9 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      KUVOX_S3_ACCESS_KEY: ci-test-access-key
+      KUVOX_S3_SECRET_KEY: ci-test-secret-key
     services:
       redis:
         image: redis:7-alpine
